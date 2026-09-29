@@ -173,7 +173,18 @@ function formatPrice(value: number) { return value.toFixed(3).replace('.', ',');
 function shortUpdated(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return 'aggiornato';
-  return `agg. ${date.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' })}`;
+
+  const now = new Date();
+  const dateDay = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const dayDiff = Math.round((today - dateDay) / 86_400_000);
+  const time = date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+
+  if (dayDiff === 0) return `agg. oggi ${time}`;
+  if (dayDiff === 1) return `agg. ieri ${time}`;
+
+  const day = date.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
+  return `agg. ${day} ${time}`;
 }
 
 const styles = StyleSheet.create({
