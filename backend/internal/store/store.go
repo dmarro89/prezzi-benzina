@@ -51,6 +51,10 @@ func (s *Store) Stats() (stations int, prices int, extracted time.Time, loaded t
 }
 
 func (s *Store) Nearby(q Query) ([]Result, error) {
+	return s.NearbyWithOverlay(q, nil)
+}
+
+func (s *Store) NearbyWithOverlay(q Query, overlay map[int64][]mimit.Price) ([]Result, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if len(s.data.Stations) == 0 {
@@ -69,7 +73,8 @@ func (s *Store) Nearby(q Query) ([]Result, error) {
 	for id, station := range s.data.Stations {
 		distance := geo.DistanceKm(q.Latitude, q.Longitude, station.Latitude, station.Longitude)
 		if distance > q.RadiusKm { continue }
-		price, ok := bestPrice(s.data.Prices[id], fuel, q.Service)
+		prices := mergePrices(s.data.Prices[id], overlay[id])
+		price, ok := bestPrice(prices, fuel, q.Service)
 		if !ok { continue }
 		results = append(results, Result{Station: station, Price: price, DistanceKm: distance})
 	}
@@ -84,6 +89,35 @@ func (s *Store) Nearby(q Query) ([]Result, error) {
 	})
 	if len(results) > q.Limit { results = results[:q.Limit] }
 	return results, nil
+}
+
+func mergePrices(base, live []mimit.Price) []mimit.Price {
+	merged := make(map[string]mimit.Price, len(base)+len(live))
+	order := make([]string, 0, len(base)+len(live))
+	add := func(p mimit.Price) {
+		fuel := canonicalFuel(p.Fuel)
+		if fuel == "" { return }
+		key := fuel + ":served"
+		if p.Self { key = fuel + ":self" }
+		current, exists := merged[key]
+		if !exists {
+			merged[key] = p
+			order = append(order, key)
+			return
+		}
+		if isNewer(p, current) { merged[key] = p }
+	}
+	for _, p := range base { add(p) }
+	for _, p := range live { add(p) }
+	out := make([]mimit.Price, 0, len(order))
+	for _, key := range order { out = append(out, merged[key]) }
+	return out
+}
+
+func isNewer(candidate, current mimit.Price) bool {
+	if candidate.UpdatedAt.IsZero() { return false }
+	if current.UpdatedAt.IsZero() { return true }
+	return candidate.UpdatedAt.After(current.UpdatedAt)
 }
 
 func bestPrice(prices []mimit.Price, fuel, service string) (mimit.Price, bool) {
