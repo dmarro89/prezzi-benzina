@@ -9,12 +9,21 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	_ "time/tzdata"
 )
 
 const (
 	DefaultStationsURL = "https://www.mimit.gov.it/images/exportCSV/anagrafica_impianti_attivi.csv"
 	DefaultPricesURL   = "https://www.mimit.gov.it/images/exportCSV/prezzo_alle_8.csv"
 )
+
+var italyLocation = func() *time.Location {
+	loc, err := time.LoadLocation("Europe/Rome")
+	if err != nil {
+		panic(fmt.Sprintf("load Europe/Rome timezone: %v", err))
+	}
+	return loc
+}()
 
 type Client struct {
 	HTTP        *http.Client
@@ -124,4 +133,9 @@ func field(row []string, header map[string]int, name string) string { i, ok := h
 func parseInt(s string) (int64, error) { return strconv.ParseInt(strings.TrimSpace(s), 10, 64) }
 func parseFloat(s string) (float64, error) { return strconv.ParseFloat(strings.ReplaceAll(strings.TrimSpace(s), ",", "."), 64) }
 func parseExtractionDate(s string) time.Time { for _, part := range strings.Fields(s) { if t, err := time.Parse("2006-01-02", strings.TrimSpace(part)); err == nil { return t.UTC() } }; return time.Time{} }
-func parseMIMITDateTime(s string) (time.Time, error) { for _, layout := range []string{"02/01/2006 15:04:05", "02/01/2006 15:04", "2006-01-02 15:04:05"} { if t, err := time.ParseInLocation(layout, strings.TrimSpace(s), time.Local); err == nil { return t.UTC(), nil } }; return time.Time{}, fmt.Errorf("unsupported date %q", s) }
+func parseMIMITDateTime(s string) (time.Time, error) {
+	for _, layout := range []string{"02/01/2006 15:04:05", "02/01/2006 15:04", "2006-01-02 15:04:05"} {
+		if t, err := time.ParseInLocation(layout, strings.TrimSpace(s), italyLocation); err == nil { return t.UTC(), nil }
+	}
+	return time.Time{}, fmt.Errorf("unsupported date %q", s)
+}
