@@ -11,19 +11,30 @@ import (
 	"github.com/dmarro89/prezzi-benzina/backend/internal/mimit"
 )
 
+const DefaultFreshnessDays = 8
+
+var italyLocation = func() *time.Location {
+	loc, err := time.LoadLocation("Europe/Rome")
+	if err != nil {
+		return time.UTC
+	}
+	return loc
+}()
+
 type Store struct {
 	mu   sync.RWMutex
 	data mimit.Dataset
 }
 
 type Query struct {
-	Latitude  float64
-	Longitude float64
-	RadiusKm  float64
-	Fuel      string
-	Service   string
-	Sort      string
-	Limit     int
+	Latitude     float64
+	Longitude    float64
+	RadiusKm     float64
+	Fuel         string
+	Service      string
+	Sort         string
+	Limit        int
+	IncludeStale bool
 }
 
 type Result struct {
@@ -78,6 +89,14 @@ func (s *Store) NearbyWithOverlay(q Query, overlay map[int64][]mimit.Price) ([]R
 		q.Limit = 100
 	}
 
+	reference := s.data.Extracted
+	if reference.IsZero() {
+		reference = s.data.LoadedAt
+	}
+	if reference.IsZero() {
+		reference = time.Now().UTC()
+	}
+
 	results := make([]Result, 0, q.Limit)
 	for id, station := range s.data.Stations {
 		distance := geo.DistanceKm(q.Latitude, q.Longitude, station.Latitude, station.Longitude)
@@ -86,6 +105,9 @@ func (s *Store) NearbyWithOverlay(q Query, overlay map[int64][]mimit.Price) ([]R
 		}
 		merged := mergePrices(s.data.Prices[id], overlay[id])
 		prices := matchingPrices(merged, fuel, q.Service)
+		if !q.IncludeStale {
+			prices = freshPrices(prices, reference)
+		}
 		if len(prices) == 0 {
 			continue
 		}
@@ -159,6 +181,28 @@ func isNewer(candidate, current mimit.Price) bool {
 		return true
 	}
 	return candidate.UpdatedAt.After(current.UpdatedAt)
+}
+
+func freshPrices(prices []mimit.Price, reference time.Time) []mimit.Price {
+	fresh := make([]mimit.Price, 0, len(prices))
+	for _, p := range prices {
+		if isPriceFresh(p, reference) {
+			fresh = append(fresh, p)
+		}
+	}
+	return fresh
+}
+
+func isPriceFresh(p mimit.Price, reference time.Time) bool {
+	if p.UpdatedAt.IsZero() || reference.IsZero() {
+		return false
+	}
+	updated := p.UpdatedAt.In(italyLocation)
+	ref := reference.In(italyLocation)
+	updatedDay := time.Date(updated.Year(), updated.Month(), updated.Day(), 0, 0, 0, 0, time.UTC)
+	refDay := time.Date(ref.Year(), ref.Month(), ref.Day(), 0, 0, 0, 0, time.UTC)
+	days := int(refDay.Sub(updatedDay).Hours() / 24)
+	return days >= 0 && days <= DefaultFreshnessDays
 }
 
 func matchingPrices(prices []mimit.Price, fuel, service string) []mimit.Price {
