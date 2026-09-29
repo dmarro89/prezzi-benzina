@@ -15,6 +15,8 @@ import {
 
 type Fuel = 'benzina' | 'gasolio' | 'gpl' | 'metano';
 type Sort = 'price' | 'distance';
+type Service = 'self' | 'served';
+type Radius = 2 | 5 | 10 | 20;
 
 type Price = { fuel: string; value: number; unit: string; service: string; updatedAt?: string };
 type Station = {
@@ -39,9 +41,12 @@ const fuels: { key: Fuel; label: string }[] = [
   { key: 'gpl', label: 'GPL' },
   { key: 'metano', label: 'Metano' },
 ];
+const radii: Radius[] = [2, 5, 10, 20];
 
 export default function App() {
   const [fuel, setFuel] = useState<Fuel>('benzina');
+  const [service, setService] = useState<Service>('self');
+  const [radius, setRadius] = useState<Radius>(5);
   const [sort, setSort] = useState<Sort>('price');
   const [stations, setStations] = useState<Station[]>([]);
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -67,9 +72,9 @@ export default function App() {
       const params = new URLSearchParams({
         lat: String(location.lat),
         lng: String(location.lng),
-        radiusKm: '10',
+        radiusKm: String(radius),
         fuel,
-        service: 'any',
+        service,
         sort,
         limit: '40',
       });
@@ -86,9 +91,9 @@ export default function App() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [coords, findLocation, fuel, sort]);
+  }, [coords, findLocation, fuel, service, radius, sort]);
 
-  useEffect(() => { void load(); }, [fuel, sort]);
+  useEffect(() => { void load(); }, [fuel, service, radius, sort]);
 
   const cheapest = useMemo(() => stations[0]?.price.value, [stations]);
 
@@ -105,7 +110,7 @@ export default function App() {
             <View style={styles.topline}>
               <View>
                 <Text style={styles.locationLabel}>●  La tua posizione</Text>
-                <Text style={styles.locationDetail}>{coords ? 'Distributori entro 10 km' : 'Localizzazione…'}</Text>
+                <Text style={styles.locationDetail}>{coords ? `Distributori entro ${radius} km` : 'Localizzazione…'}</Text>
               </View>
               <View style={styles.liveBadge}><Text style={styles.liveText}>MIMIT</Text></View>
             </View>
@@ -121,10 +126,35 @@ export default function App() {
               ))}
             </View>
 
+            <View style={styles.filters}>
+              <View style={styles.filterBlock}>
+                <Text style={styles.filterLabel}>SERVIZIO</Text>
+                <View style={styles.segmented}>
+                  <Pressable onPress={() => setService('self')} style={[styles.segment, service === 'self' && styles.segmentActive]}>
+                    <Text style={[styles.segmentText, service === 'self' && styles.segmentTextActive]}>Self</Text>
+                  </Pressable>
+                  <Pressable onPress={() => setService('served')} style={[styles.segment, service === 'served' && styles.segmentActive]}>
+                    <Text style={[styles.segmentText, service === 'served' && styles.segmentTextActive]}>Servito</Text>
+                  </Pressable>
+                </View>
+              </View>
+
+              <View style={[styles.filterBlock, styles.radiusBlock]}>
+                <Text style={styles.filterLabel}>RAGGIO</Text>
+                <View style={styles.segmented}>
+                  {radii.map((item) => (
+                    <Pressable key={item} onPress={() => setRadius(item)} style={[styles.radiusSegment, radius === item && styles.segmentActive]}>
+                      <Text style={[styles.segmentText, radius === item && styles.segmentTextActive]}>{item} km</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            </View>
+
             <View style={styles.sectionBar}>
               <View>
                 <Text style={styles.sectionTitle}>VICINO A TE</Text>
-                {cheapest ? <Text style={styles.sectionCaption}>Da {formatPrice(cheapest)} €/L</Text> : null}
+                {cheapest ? <Text style={styles.sectionCaption}>Da {formatPrice(cheapest)} €/L · {service === 'self' ? 'Self' : 'Servito'}</Text> : null}
               </View>
               <Pressable onPress={() => setSort((s) => (s === 'price' ? 'distance' : 'price'))} style={styles.sortButton}>
                 <Text style={styles.sortText}>{sort === 'price' ? 'Prezzo ↑' : 'Distanza ↑'}</Text>
@@ -136,7 +166,7 @@ export default function App() {
           </View>
         }
         renderItem={({ item, index }) => <StationCard station={item} best={sort === 'price' && index === 0} />}
-        ListEmptyComponent={!loading && !error ? <Text style={styles.empty}>Nessun distributore trovato nel raggio selezionato.</Text> : null}
+        ListEmptyComponent={!loading && !error ? <Text style={styles.empty}>Nessun distributore trovato con questi filtri.</Text> : null}
         ListFooterComponent={<Text style={styles.footer}>Fonte: MIMIT · Open Data carburanti</Text>}
       />
     </SafeAreaView>
@@ -149,7 +179,6 @@ function StationCard({ station, best }: { station: Station; best: boolean }) {
     void Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`);
   };
   const brand = (station.brand || station.name || 'Distributore').trim();
-  const prices = station.prices?.length ? station.prices : [station.price];
   const address = station.address || 'Indirizzo non disponibile';
   const locality = station.city
     ? `${station.city}${station.province ? ` (${station.province})` : ''}`
@@ -167,9 +196,7 @@ function StationCard({ station, best }: { station: Station; best: boolean }) {
         {locality ? <Text numberOfLines={1} style={styles.city}>{locality}</Text> : null}
         <Text style={styles.meta}>{station.distanceKm.toFixed(1).replace('.', ',')} km</Text>
       </View>
-      <View style={styles.pricesBox}>
-        {prices.map((item) => <PriceRow key={`${item.service}-${item.value}-${item.updatedAt ?? ''}`} price={item} />)}
-      </View>
+      <PriceRow price={station.price} />
     </Pressable>
   );
 }
@@ -217,11 +244,21 @@ const styles = StyleSheet.create({
   liveText: { color: '#8CF0B0', fontSize: 11, letterSpacing: 1.2, fontWeight: '800' },
   title: { color: '#F4F5F4', fontSize: 42, lineHeight: 44, letterSpacing: -1.6, fontWeight: '800', marginTop: 46 },
   subtitle: { color: '#A5AAA7', fontSize: 17, lineHeight: 24, marginTop: 14, maxWidth: 340 },
-  chips: { flexDirection: 'row', gap: 8, marginTop: 28, marginBottom: 34 },
+  chips: { flexDirection: 'row', gap: 8, marginTop: 28, marginBottom: 24 },
   chip: { borderWidth: 1, borderColor: '#303532', borderRadius: 999, paddingVertical: 11, paddingHorizontal: 16, backgroundColor: '#101211' },
   chipActive: { backgroundColor: '#8CF0B0', borderColor: '#8CF0B0' },
   chipText: { color: '#AEB2B0', fontWeight: '700', fontSize: 13 },
   chipTextActive: { color: '#07120B' },
+  filters: { marginBottom: 30, gap: 14 },
+  filterBlock: { gap: 7 },
+  radiusBlock: { marginTop: 1 },
+  filterLabel: { color: '#666D68', fontSize: 9, fontWeight: '800', letterSpacing: 1.1 },
+  segmented: { flexDirection: 'row', alignSelf: 'flex-start', backgroundColor: '#101211', borderRadius: 11, borderWidth: 1, borderColor: '#242824', overflow: 'hidden' },
+  segment: { minWidth: 82, alignItems: 'center', paddingVertical: 9, paddingHorizontal: 14 },
+  radiusSegment: { alignItems: 'center', paddingVertical: 9, paddingHorizontal: 11 },
+  segmentActive: { backgroundColor: '#E9ECE9' },
+  segmentText: { color: '#8A908C', fontSize: 11, fontWeight: '700' },
+  segmentTextActive: { color: '#111411' },
   sectionBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 12 },
   sectionTitle: { color: '#E8EAE8', fontSize: 12, fontWeight: '800', letterSpacing: 1.4 },
   sectionCaption: { color: '#7F8582', fontSize: 12, marginTop: 5 },
@@ -241,8 +278,7 @@ const styles = StyleSheet.create({
   address: { color: '#9A9E9B', fontSize: 12, marginTop: 4 },
   city: { color: '#777D79', fontSize: 11, marginTop: 3 },
   meta: { color: '#696F6B', fontSize: 10.5, marginTop: 7 },
-  pricesBox: { alignItems: 'flex-end', marginLeft: 10, gap: 8 },
-  priceRow: { alignItems: 'flex-end' },
+  priceRow: { alignItems: 'flex-end', marginLeft: 10 },
   serviceLabel: { color: '#737A75', fontSize: 7.5, fontWeight: '800', letterSpacing: .45, marginBottom: 1 },
   priceValueRow: { flexDirection: 'row', alignItems: 'baseline', gap: 3 },
   price: { color: '#8CF0B0', fontSize: 20, letterSpacing: -.6, fontWeight: '800' },
