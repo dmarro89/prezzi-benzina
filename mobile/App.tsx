@@ -150,6 +150,10 @@ function StationCard({ station, best }: { station: Station; best: boolean }) {
   };
   const brand = (station.brand || station.name || 'Distributore').trim();
   const prices = station.prices?.length ? station.prices : [station.price];
+  const address = station.address || 'Indirizzo non disponibile';
+  const locality = station.city
+    ? `${station.city}${station.province ? ` (${station.province})` : ''}`
+    : station.province;
 
   return (
     <Pressable onPress={navigate} style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}>
@@ -159,7 +163,8 @@ function StationCard({ station, best }: { station: Station; best: boolean }) {
           <Text numberOfLines={1} style={styles.brand}>{brand}</Text>
           {best ? <View style={styles.bestBadge}><Text style={styles.bestText}>MIGLIORE</Text></View> : null}
         </View>
-        <Text numberOfLines={1} style={styles.address}>{station.address || station.city}</Text>
+        <Text numberOfLines={1} style={styles.address}>{address}</Text>
+        {locality ? <Text numberOfLines={1} style={styles.city}>{locality}</Text> : null}
         <Text style={styles.meta}>{station.distanceKm.toFixed(1).replace('.', ',')} km</Text>
       </View>
       <View style={styles.pricesBox}>
@@ -224,7 +229,7 @@ const styles = StyleSheet.create({
   sortText: { color: '#BEC2BF', fontSize: 12, fontWeight: '700' },
   center: { paddingVertical: 35, alignItems: 'center', gap: 12 },
   muted: { color: '#777E79', fontSize: 13 },
-  card: { minHeight: 100, backgroundColor: '#151716', borderRadius: 18, padding: 13, marginBottom: 10, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#202320' },
+  card: { minHeight: 108, backgroundColor: '#151716', borderRadius: 18, padding: 13, marginBottom: 10, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#202320' },
   cardPressed: { opacity: 0.7 },
   logo: { width: 50, height: 50, borderRadius: 14, backgroundColor: '#F0F2EF', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
   logoText: { color: '#101210', fontWeight: '900', fontSize: 15 },
@@ -234,6 +239,7 @@ const styles = StyleSheet.create({
   bestBadge: { backgroundColor: '#1E3325', borderRadius: 5, paddingHorizontal: 5, paddingVertical: 3 },
   bestText: { color: '#8CF0B0', fontWeight: '900', fontSize: 8, letterSpacing: .7 },
   address: { color: '#9A9E9B', fontSize: 12, marginTop: 4 },
+  city: { color: '#777D79', fontSize: 11, marginTop: 3 },
   meta: { color: '#696F6B', fontSize: 10.5, marginTop: 7 },
   pricesBox: { alignItems: 'flex-end', marginLeft: 10, gap: 8 },
   priceRow: { alignItems: 'flex-end' },
