@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "Prezzi Benzina",
+    "slug": "prezzi-benzina",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "it.dmarro89.prezzibenzina"
+    },
+    "android": {
+      "package": "it.dmarro89.prezzibenzina"
+    },
+    "plugins": [["expo-location", {"locationWhenInUsePermission": "Usiamo la tua posizione solo per mostrarti i distributori vicini."}]]
+  }
+}
