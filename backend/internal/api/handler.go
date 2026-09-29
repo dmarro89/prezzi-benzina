@@ -20,10 +20,12 @@ type Handler struct {
 }
 
 type nearbyResponse struct {
-	DataSource string            `json:"dataSource"`
-	LiveData   bool              `json:"liveData"`
-	Count      int               `json:"count"`
-	Stations   []stationResponse `json:"stations"`
+	DataSource    string            `json:"dataSource"`
+	LiveData      bool              `json:"liveData"`
+	FreshnessDays int               `json:"freshnessDays"`
+	IncludeStale  bool              `json:"includeStale"`
+	Count         int               `json:"count"`
+	Stations      []stationResponse `json:"stations"`
 }
 type stationResponse struct {
 	ID       int64    `json:"id"`
@@ -63,7 +65,7 @@ func (h Handler) health(w http.ResponseWriter, _ *http.Request) {
 	if stations == 0 {
 		status, code = "loading", http.StatusServiceUnavailable
 	}
-	writeJSON(w, code, map[string]any{"status": status, "stations": stations, "prices": prices, "datasetExtractedAt": timeOrNil(extracted), "loadedAt": timeOrNil(loaded)})
+	writeJSON(w, code, map[string]any{"status": status, "stations": stations, "prices": prices, "datasetExtractedAt": timeOrNil(extracted), "loadedAt": timeOrNil(loaded), "freshnessDays": store.DefaultFreshnessDays})
 }
 
 func (h Handler) nearby(w http.ResponseWriter, r *http.Request) {
@@ -98,8 +100,13 @@ func (h Handler) nearby(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "sort must be price or distance")
 		return
 	}
+	includeStale, err := queryBoolDefault(r, "includeStale", false)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "includeStale must be true or false")
+		return
+	}
 
-	query := store.Query{Latitude: lat, Longitude: lng, RadiusKm: radius, Fuel: r.URL.Query().Get("fuel"), Service: service, Sort: sortBy, Limit: queryIntDefault(r, "limit", 30)}
+	query := store.Query{Latitude: lat, Longitude: lng, RadiusKm: radius, Fuel: r.URL.Query().Get("fuel"), Service: service, Sort: sortBy, Limit: queryIntDefault(r, "limit", 30), IncludeStale: includeStale}
 	var overlay map[int64][]mimit.Price
 	liveData := false
 	if h.Live != nil {
@@ -137,7 +144,7 @@ func (h Handler) nearby(w http.ResponseWriter, r *http.Request) {
 	if liveData {
 		dataSource = "MIMIT Open Data + Osservaprezzi live"
 	}
-	writeJSON(w, http.StatusOK, nearbyResponse{DataSource: dataSource, LiveData: liveData, Count: len(out), Stations: out})
+	writeJSON(w, http.StatusOK, nearbyResponse{DataSource: dataSource, LiveData: liveData, FreshnessDays: store.DefaultFreshnessDays, IncludeStale: includeStale, Count: len(out), Stations: out})
 }
 
 func priceResponse(item mimit.Price) price {
@@ -192,6 +199,13 @@ func queryIntDefault(r *http.Request, name string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+func queryBoolDefault(r *http.Request, name string, fallback bool) (bool, error) {
+	v := strings.TrimSpace(r.URL.Query().Get(name))
+	if v == "" {
+		return fallback, nil
+	}
+	return strconv.ParseBool(v)
 }
 func round(v float64, decimals int) float64 {
 	p := 1.0
