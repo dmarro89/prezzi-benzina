@@ -35,6 +35,7 @@ type stationResponse struct {
 	Location location `json:"location"`
 	Distance float64  `json:"distanceKm"`
 	Price    price    `json:"price"`
+	Prices   []price  `json:"prices"`
 }
 type location struct {
 	Lat float64 `json:"lat"`
@@ -119,30 +120,41 @@ func (h Handler) nearby(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]stationResponse, 0, len(results))
 	for _, item := range results {
-		unit := "EUR/L"
-		if strings.EqualFold(item.Price.Fuel, "Metano") {
-			unit = "EUR/kg"
-		}
-		serviceName := "served"
-		if item.Price.Self {
-			serviceName = "self"
-		}
-		var updated *time.Time
-		if !item.Price.UpdatedAt.IsZero() {
-			t := item.Price.UpdatedAt
-			updated = &t
-		}
 		name := strings.TrimSpace(item.Station.Name)
 		if name == "" {
 			name = strings.TrimSpace(item.Station.Brand)
 		}
-		out = append(out, stationResponse{ID: item.Station.ID, Brand: item.Station.Brand, Name: name, Address: item.Station.Address, City: item.Station.City, Province: item.Station.Province, Location: location{Lat: item.Station.Latitude, Lng: item.Station.Longitude}, Distance: round(item.DistanceKm, 2), Price: price{Fuel: item.Price.Fuel, Value: item.Price.Value, Unit: unit, Service: serviceName, UpdatedAt: updated}})
+		prices := make([]price, 0, len(item.Prices))
+		for _, itemPrice := range item.Prices {
+			prices = append(prices, priceResponse(itemPrice))
+		}
+		out = append(out, stationResponse{
+			ID: item.Station.ID, Brand: item.Station.Brand, Name: name, Address: item.Station.Address, City: item.Station.City, Province: item.Station.Province,
+			Location: location{Lat: item.Station.Latitude, Lng: item.Station.Longitude}, Distance: round(item.DistanceKm, 2), Price: priceResponse(item.Price), Prices: prices,
+		})
 	}
 	dataSource := "MIMIT Open Data"
 	if liveData {
 		dataSource = "MIMIT Open Data + Osservaprezzi live"
 	}
 	writeJSON(w, http.StatusOK, nearbyResponse{DataSource: dataSource, LiveData: liveData, Count: len(out), Stations: out})
+}
+
+func priceResponse(item mimit.Price) price {
+	unit := "EUR/L"
+	if strings.EqualFold(item.Fuel, "Metano") {
+		unit = "EUR/kg"
+	}
+	serviceName := "served"
+	if item.Self {
+		serviceName = "self"
+	}
+	var updated *time.Time
+	if !item.UpdatedAt.IsZero() {
+		t := item.UpdatedAt
+		updated = &t
+	}
+	return price{Fuel: item.Fuel, Value: item.Value, Unit: unit, Service: serviceName, UpdatedAt: updated}
 }
 
 func cors(next http.Handler) http.Handler {
