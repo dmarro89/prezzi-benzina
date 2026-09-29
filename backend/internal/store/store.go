@@ -12,23 +12,24 @@ import (
 )
 
 type Store struct {
-	mu sync.RWMutex
+	mu   sync.RWMutex
 	data mimit.Dataset
 }
 
 type Query struct {
-	Latitude float64
+	Latitude  float64
 	Longitude float64
-	RadiusKm float64
-	Fuel string
-	Service string
-	Sort string
-	Limit int
+	RadiusKm  float64
+	Fuel      string
+	Service   string
+	Sort      string
+	Limit     int
 }
 
 type Result struct {
-	Station mimit.Station
-	Price mimit.Price
+	Station    mimit.Station
+	Price      mimit.Price
+	Prices     []mimit.Price
 	DistanceKm float64
 }
 
@@ -64,30 +65,54 @@ func (s *Store) NearbyWithOverlay(q Query, overlay map[int64][]mimit.Price) ([]R
 	if fuel == "" {
 		return nil, errors.New("unsupported fuel")
 	}
-	if q.RadiusKm <= 0 { q.RadiusKm = 5 }
-	if q.RadiusKm > 50 { q.RadiusKm = 50 }
-	if q.Limit <= 0 { q.Limit = 30 }
-	if q.Limit > 100 { q.Limit = 100 }
+	if q.RadiusKm <= 0 {
+		q.RadiusKm = 5
+	}
+	if q.RadiusKm > 50 {
+		q.RadiusKm = 50
+	}
+	if q.Limit <= 0 {
+		q.Limit = 30
+	}
+	if q.Limit > 100 {
+		q.Limit = 100
+	}
 
 	results := make([]Result, 0, q.Limit)
 	for id, station := range s.data.Stations {
 		distance := geo.DistanceKm(q.Latitude, q.Longitude, station.Latitude, station.Longitude)
-		if distance > q.RadiusKm { continue }
-		prices := mergePrices(s.data.Prices[id], overlay[id])
-		price, ok := bestPrice(prices, fuel, q.Service)
-		if !ok { continue }
-		results = append(results, Result{Station: station, Price: price, DistanceKm: distance})
+		if distance > q.RadiusKm {
+			continue
+		}
+		merged := mergePrices(s.data.Prices[id], overlay[id])
+		prices := matchingPrices(merged, fuel, q.Service)
+		if len(prices) == 0 {
+			continue
+		}
+		primary := prices[0]
+		for _, p := range prices[1:] {
+			if p.Value < primary.Value {
+				primary = p
+			}
+		}
+		results = append(results, Result{Station: station, Price: primary, Prices: prices, DistanceKm: distance})
 	}
 
 	sort.Slice(results, func(i, j int) bool {
 		if q.Sort == "distance" {
-			if results[i].DistanceKm == results[j].DistanceKm { return results[i].Price.Value < results[j].Price.Value }
+			if results[i].DistanceKm == results[j].DistanceKm {
+				return results[i].Price.Value < results[j].Price.Value
+			}
 			return results[i].DistanceKm < results[j].DistanceKm
 		}
-		if results[i].Price.Value == results[j].Price.Value { return results[i].DistanceKm < results[j].DistanceKm }
+		if results[i].Price.Value == results[j].Price.Value {
+			return results[i].DistanceKm < results[j].DistanceKm
+		}
 		return results[i].Price.Value < results[j].Price.Value
 	})
-	if len(results) > q.Limit { results = results[:q.Limit] }
+	if len(results) > q.Limit {
+		results = results[:q.Limit]
+	}
 	return results, nil
 }
 
@@ -96,49 +121,96 @@ func mergePrices(base, live []mimit.Price) []mimit.Price {
 	order := make([]string, 0, len(base)+len(live))
 	add := func(p mimit.Price) {
 		fuel := canonicalFuel(p.Fuel)
-		if fuel == "" { return }
+		if fuel == "" {
+			return
+		}
 		key := fuel + ":served"
-		if p.Self { key = fuel + ":self" }
+		if p.Self {
+			key = fuel + ":self"
+		}
 		current, exists := merged[key]
 		if !exists {
 			merged[key] = p
 			order = append(order, key)
 			return
 		}
-		if isNewer(p, current) { merged[key] = p }
+		if isNewer(p, current) {
+			merged[key] = p
+		}
 	}
-	for _, p := range base { add(p) }
-	for _, p := range live { add(p) }
+	for _, p := range base {
+		add(p)
+	}
+	for _, p := range live {
+		add(p)
+	}
 	out := make([]mimit.Price, 0, len(order))
-	for _, key := range order { out = append(out, merged[key]) }
+	for _, key := range order {
+		out = append(out, merged[key])
+	}
 	return out
 }
 
 func isNewer(candidate, current mimit.Price) bool {
-	if candidate.UpdatedAt.IsZero() { return false }
-	if current.UpdatedAt.IsZero() { return true }
+	if candidate.UpdatedAt.IsZero() {
+		return false
+	}
+	if current.UpdatedAt.IsZero() {
+		return true
+	}
 	return candidate.UpdatedAt.After(current.UpdatedAt)
 }
 
-func bestPrice(prices []mimit.Price, fuel, service string) (mimit.Price, bool) {
-	var best mimit.Price
-	found := false
+func matchingPrices(prices []mimit.Price, fuel, service string) []mimit.Price {
+	matches := make([]mimit.Price, 0, 2)
 	for _, p := range prices {
-		if canonicalFuel(p.Fuel) != fuel { continue }
-		if service == "self" && !p.Self { continue }
-		if service == "served" && p.Self { continue }
-		if !found || p.Value < best.Value { best, found = p, true }
+		if canonicalFuel(p.Fuel) != fuel {
+			continue
+		}
+		if service == "self" && !p.Self {
+			continue
+		}
+		if service == "served" && p.Self {
+			continue
+		}
+		matches = append(matches, p)
 	}
-	return best, found
+	// Keep the payload stable and easy to scan in the UI: Self first, Servito second.
+	sort.SliceStable(matches, func(i, j int) bool {
+		if matches[i].Self != matches[j].Self {
+			return matches[i].Self
+		}
+		return matches[i].Value < matches[j].Value
+	})
+	return matches
+}
+
+func bestPrice(prices []mimit.Price, fuel, service string) (mimit.Price, bool) {
+	matches := matchingPrices(prices, fuel, service)
+	if len(matches) == 0 {
+		return mimit.Price{}, false
+	}
+	best := matches[0]
+	for _, p := range matches[1:] {
+		if p.Value < best.Value {
+			best = p
+		}
+	}
+	return best, true
 }
 
 func canonicalFuel(v string) string {
 	v = strings.ToLower(strings.TrimSpace(v))
 	switch v {
-	case "benzina", "petrol", "gasoline": return "benzina"
-	case "gasolio", "diesel": return "gasolio"
-	case "gpl", "lpg": return "gpl"
-	case "metano", "cng": return "metano"
-	default: return ""
+	case "benzina", "petrol", "gasoline":
+		return "benzina"
+	case "gasolio", "diesel":
+		return "gasolio"
+	case "gpl", "lpg":
+		return "gpl"
+	case "metano", "cng":
+		return "metano"
+	default:
+		return ""
 	}
 }
