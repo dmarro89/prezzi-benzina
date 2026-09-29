@@ -3,6 +3,7 @@ package mimit
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseStations2026Format(t *testing.T) {
@@ -24,4 +25,6 @@ func TestParsePrices2026Format(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 	p := prices[123][0]
 	if p.Value != 1.679 || !p.Self || p.Fuel != "Benzina" { t.Fatalf("unexpected price: %+v", p) }
+	want := time.Date(2026, time.September, 28, 5, 42, 0, 0, time.UTC)
+	if !p.UpdatedAt.Equal(want) { t.Fatalf("unexpected update timestamp: got %v want %v", p.UpdatedAt, want) }
 }
