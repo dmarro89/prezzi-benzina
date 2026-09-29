@@ -150,11 +150,6 @@ function StationCard({ station, best }: { station: Station; best: boolean }) {
   };
   const brand = (station.brand || station.name || 'Distributore').trim();
   const prices = station.prices?.length ? station.prices : [station.price];
-  const latestUpdate = prices
-    .map((item) => item.updatedAt ? new Date(item.updatedAt) : null)
-    .filter((item): item is Date => item !== null && !Number.isNaN(item.getTime()))
-    .sort((a, b) => b.getTime() - a.getTime())[0];
-  const updated = latestUpdate ? shortUpdated(latestUpdate.toISOString()) : 'aggiornamento non disponibile';
 
   return (
     <Pressable onPress={navigate} style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}>
@@ -165,7 +160,7 @@ function StationCard({ station, best }: { station: Station; best: boolean }) {
           {best ? <View style={styles.bestBadge}><Text style={styles.bestText}>MIGLIORE</Text></View> : null}
         </View>
         <Text numberOfLines={1} style={styles.address}>{station.address || station.city}</Text>
-        <Text style={styles.meta}>{station.distanceKm.toFixed(1).replace('.', ',')} km  ·  {updated}</Text>
+        <Text style={styles.meta}>{station.distanceKm.toFixed(1).replace('.', ',')} km</Text>
       </View>
       <View style={styles.pricesBox}>
         {prices.map((item) => <PriceRow key={`${item.service}-${item.value}-${item.updatedAt ?? ''}`} price={item} />)}
@@ -176,9 +171,11 @@ function StationCard({ station, best }: { station: Station; best: boolean }) {
 
 function PriceRow({ price }: { price: Price }) {
   const unit = price.unit === 'EUR/kg' ? '€/kg' : '€/L';
+  const service = price.service === 'self' ? 'SELF' : 'SERVITO';
+  const updated = price.updatedAt ? shortUpdated(price.updatedAt).replace('agg. ', '') : null;
   return (
     <View style={styles.priceRow}>
-      <Text style={styles.serviceLabel}>{price.service === 'self' ? 'SELF' : 'SERVITO'}</Text>
+      <Text style={styles.serviceLabel}>{service}{updated ? ` · ${updated}` : ''}</Text>
       <View style={styles.priceValueRow}>
         <Text style={styles.price}>{formatPrice(price.value)}</Text>
         <Text style={styles.unit}>{unit}</Text>
@@ -240,7 +237,7 @@ const styles = StyleSheet.create({
   meta: { color: '#696F6B', fontSize: 10.5, marginTop: 7 },
   pricesBox: { alignItems: 'flex-end', marginLeft: 10, gap: 8 },
   priceRow: { alignItems: 'flex-end' },
-  serviceLabel: { color: '#737A75', fontSize: 8, fontWeight: '800', letterSpacing: .8, marginBottom: 1 },
+  serviceLabel: { color: '#737A75', fontSize: 7.5, fontWeight: '800', letterSpacing: .45, marginBottom: 1 },
   priceValueRow: { flexDirection: 'row', alignItems: 'baseline', gap: 3 },
   price: { color: '#8CF0B0', fontSize: 20, letterSpacing: -.6, fontWeight: '800' },
   unit: { color: '#8B918D', fontSize: 9 },
