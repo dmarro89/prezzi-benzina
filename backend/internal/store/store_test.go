@@ -65,6 +65,7 @@ func TestNearbyAnyReturnsSelfAndServed(t *testing.T) {
 				{StationID: 1, Fuel: "Benzina", Value: 1.699, Self: true, UpdatedAt: updated},
 				{StationID: 1, Fuel: "Benzina", Value: 1.899, Self: false, UpdatedAt: updated},
 			},
+		},
 	})
 
 	results, err := s.Nearby(Query{Latitude: 40.85, Longitude: 14.27, RadiusKm: 5, Fuel: "benzina", Service: "any", Sort: "price"})
