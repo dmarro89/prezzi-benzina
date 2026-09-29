@@ -16,6 +16,7 @@ import {
 type Fuel = 'benzina' | 'gasolio' | 'gpl' | 'metano';
 type Sort = 'price' | 'distance';
 
+type Price = { fuel: string; value: number; unit: string; service: string; updatedAt?: string };
 type Station = {
   id: number;
   brand: string;
@@ -25,10 +26,11 @@ type Station = {
   province: string;
   location: { lat: number; lng: number };
   distanceKm: number;
-  price: { fuel: string; value: number; unit: string; service: string; updatedAt?: string };
+  price: Price;
+  prices?: Price[];
 };
 
-type NearbyResponse = { dataSource: string; count: number; stations: Station[] };
+type NearbyResponse = { dataSource: string; liveData?: boolean; count: number; stations: Station[] };
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
 const fuels: { key: Fuel; label: string }[] = [
@@ -67,7 +69,7 @@ export default function App() {
         lng: String(location.lng),
         radiusKm: '10',
         fuel,
-        service: fuel === 'benzina' || fuel === 'gasolio' ? 'self' : 'any',
+        service: 'any',
         sort,
         limit: '40',
       });
@@ -147,8 +149,12 @@ function StationCard({ station, best }: { station: Station; best: boolean }) {
     void Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`);
   };
   const brand = (station.brand || station.name || 'Distributore').trim();
-  const updated = station.price.updatedAt ? shortUpdated(station.price.updatedAt) : 'aggiornamento non disponibile';
-  const unit = station.price.unit === 'EUR/kg' ? '€/kg' : '€/L';
+  const prices = station.prices?.length ? station.prices : [station.price];
+  const latestUpdate = prices
+    .map((item) => item.updatedAt ? new Date(item.updatedAt) : null)
+    .filter((item): item is Date => item !== null && !Number.isNaN(item.getTime()))
+    .sort((a, b) => b.getTime() - a.getTime())[0];
+  const updated = latestUpdate ? shortUpdated(latestUpdate.toISOString()) : 'aggiornamento non disponibile';
 
   return (
     <Pressable onPress={navigate} style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}>
@@ -159,13 +165,25 @@ function StationCard({ station, best }: { station: Station; best: boolean }) {
           {best ? <View style={styles.bestBadge}><Text style={styles.bestText}>MIGLIORE</Text></View> : null}
         </View>
         <Text numberOfLines={1} style={styles.address}>{station.address || station.city}</Text>
-        <Text style={styles.meta}>{station.distanceKm.toFixed(1).replace('.', ',')} km  ·  {station.price.service === 'self' ? 'Self' : 'Servito'}  ·  {updated}</Text>
+        <Text style={styles.meta}>{station.distanceKm.toFixed(1).replace('.', ',')} km  ·  {updated}</Text>
       </View>
-      <View style={styles.priceBox}>
-        <Text style={styles.price}>{formatPrice(station.price.value)}</Text>
-        <Text style={styles.unit}>{unit}</Text>
+      <View style={styles.pricesBox}>
+        {prices.map((item) => <PriceRow key={`${item.service}-${item.value}-${item.updatedAt ?? ''}`} price={item} />)}
       </View>
     </Pressable>
+  );
+}
+
+function PriceRow({ price }: { price: Price }) {
+  const unit = price.unit === 'EUR/kg' ? '€/kg' : '€/L';
+  return (
+    <View style={styles.priceRow}>
+      <Text style={styles.serviceLabel}>{price.service === 'self' ? 'SELF' : 'SERVITO'}</Text>
+      <View style={styles.priceValueRow}>
+        <Text style={styles.price}>{formatPrice(price.value)}</Text>
+        <Text style={styles.unit}>{unit}</Text>
+      </View>
+    </View>
   );
 }
 
@@ -209,7 +227,7 @@ const styles = StyleSheet.create({
   sortText: { color: '#BEC2BF', fontSize: 12, fontWeight: '700' },
   center: { paddingVertical: 35, alignItems: 'center', gap: 12 },
   muted: { color: '#777E79', fontSize: 13 },
-  card: { minHeight: 92, backgroundColor: '#151716', borderRadius: 18, padding: 13, marginBottom: 10, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#202320' },
+  card: { minHeight: 100, backgroundColor: '#151716', borderRadius: 18, padding: 13, marginBottom: 10, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#202320' },
   cardPressed: { opacity: 0.7 },
   logo: { width: 50, height: 50, borderRadius: 14, backgroundColor: '#F0F2EF', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
   logoText: { color: '#101210', fontWeight: '900', fontSize: 15 },
@@ -220,9 +238,12 @@ const styles = StyleSheet.create({
   bestText: { color: '#8CF0B0', fontWeight: '900', fontSize: 8, letterSpacing: .7 },
   address: { color: '#9A9E9B', fontSize: 12, marginTop: 4 },
   meta: { color: '#696F6B', fontSize: 10.5, marginTop: 7 },
-  priceBox: { alignItems: 'flex-end', marginLeft: 10 },
-  price: { color: '#8CF0B0', fontSize: 23, letterSpacing: -.7, fontWeight: '800' },
-  unit: { color: '#8B918D', fontSize: 10, marginTop: 2 },
+  pricesBox: { alignItems: 'flex-end', marginLeft: 10, gap: 8 },
+  priceRow: { alignItems: 'flex-end' },
+  serviceLabel: { color: '#737A75', fontSize: 8, fontWeight: '800', letterSpacing: .8, marginBottom: 1 },
+  priceValueRow: { flexDirection: 'row', alignItems: 'baseline', gap: 3 },
+  price: { color: '#8CF0B0', fontSize: 20, letterSpacing: -.6, fontWeight: '800' },
+  unit: { color: '#8B918D', fontSize: 9 },
   error: { backgroundColor: '#1B1515', borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: '#3A2424' },
   errorTitle: { color: '#F2EAEA', fontWeight: '800', fontSize: 14 },
   errorText: { color: '#BCAAAA', fontSize: 11, marginTop: 7 },
