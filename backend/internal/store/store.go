@@ -37,6 +37,11 @@ type Query struct {
 	IncludeStale bool
 }
 
+type LiveStation struct {
+	Station mimit.Station
+	Prices  []mimit.Price
+}
+
 type Result struct {
 	Station    mimit.Station
 	Price      mimit.Price
@@ -66,15 +71,60 @@ func (s *Store) Nearby(q Query) ([]Result, error) {
 	return s.NearbyWithOverlay(q, nil)
 }
 
+// NearbyWithOverlay keeps the CSV station registry as the candidate set and overlays
+// newer prices. It is used as the fallback path when the live search is unavailable.
 func (s *Store) NearbyWithOverlay(q Query, overlay map[int64][]mimit.Price) ([]Result, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if len(s.data.Stations) == 0 {
-		return nil, errors.New("dataset not loaded")
+	fuel, err := normalizeQuery(&q, len(s.data.Stations) > 0)
+	if err != nil {
+		return nil, err
+	}
+
+	reference := time.Now().UTC()
+	results := make([]Result, 0, q.Limit)
+	for id, station := range s.data.Stations {
+		merged := mergePrices(s.data.Prices[id], overlay[id])
+		if result, ok := resultForStation(q, fuel, station, merged, reference); ok {
+			results = append(results, result)
+		}
+	}
+	return finishResults(results, q), nil
+}
+
+// NearbyWithLive uses the stations returned by Osservaprezzi as the authoritative
+// candidate set. The CSV registry enriches metadata and contributes prices, but it
+// cannot remove a station that the live search returned.
+func (s *Store) NearbyWithLive(q Query, live []LiveStation) ([]Result, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	fuel, err := normalizeQuery(&q, len(s.data.Stations) > 0)
+	if err != nil {
+		return nil, err
+	}
+
+	reference := time.Now().UTC()
+	results := make([]Result, 0, len(live))
+	for _, item := range live {
+		station := item.Station
+		if base, ok := s.data.Stations[station.ID]; ok {
+			station = enrichStation(station, base)
+		}
+		merged := mergePrices(s.data.Prices[station.ID], item.Prices)
+		if result, ok := resultForStation(q, fuel, station, merged, reference); ok {
+			results = append(results, result)
+		}
+	}
+	return finishResults(results, q), nil
+}
+
+func normalizeQuery(q *Query, loaded bool) (string, error) {
+	if !loaded {
+		return "", errors.New("dataset not loaded")
 	}
 	fuel := canonicalFuel(q.Fuel)
 	if fuel == "" {
-		return nil, errors.New("unsupported fuel")
+		return "", errors.New("unsupported fuel")
 	}
 	if q.RadiusKm <= 0 {
 		q.RadiusKm = 5
@@ -88,38 +138,34 @@ func (s *Store) NearbyWithOverlay(q Query, overlay map[int64][]mimit.Price) ([]R
 	if q.Limit > 100 {
 		q.Limit = 100
 	}
+	return fuel, nil
+}
 
-	reference := s.data.Extracted
-	if reference.IsZero() {
-		reference = s.data.LoadedAt
+func resultForStation(q Query, fuel string, station mimit.Station, prices []mimit.Price, reference time.Time) (Result, bool) {
+	if station.Latitude == 0 && station.Longitude == 0 {
+		return Result{}, false
 	}
-	if reference.IsZero() {
-		reference = time.Now().UTC()
+	distance := geo.DistanceKm(q.Latitude, q.Longitude, station.Latitude, station.Longitude)
+	if distance > q.RadiusKm {
+		return Result{}, false
 	}
+	matches := matchingPrices(prices, fuel, q.Service)
+	if !q.IncludeStale {
+		matches = freshPrices(matches, reference)
+	}
+	if len(matches) == 0 {
+		return Result{}, false
+	}
+	primary := matches[0]
+	for _, p := range matches[1:] {
+		if p.Value < primary.Value {
+			primary = p
+		}
+	}
+	return Result{Station: station, Price: primary, Prices: matches, DistanceKm: distance}, true
+}
 
-	results := make([]Result, 0, q.Limit)
-	for id, station := range s.data.Stations {
-		distance := geo.DistanceKm(q.Latitude, q.Longitude, station.Latitude, station.Longitude)
-		if distance > q.RadiusKm {
-			continue
-		}
-		merged := mergePrices(s.data.Prices[id], overlay[id])
-		prices := matchingPrices(merged, fuel, q.Service)
-		if !q.IncludeStale {
-			prices = freshPrices(prices, reference)
-		}
-		if len(prices) == 0 {
-			continue
-		}
-		primary := prices[0]
-		for _, p := range prices[1:] {
-			if p.Value < primary.Value {
-				primary = p
-			}
-		}
-		results = append(results, Result{Station: station, Price: primary, Prices: prices, DistanceKm: distance})
-	}
-
+func finishResults(results []Result, q Query) []Result {
 	sort.Slice(results, func(i, j int) bool {
 		if q.Sort == "distance" {
 			if results[i].DistanceKm == results[j].DistanceKm {
@@ -135,7 +181,36 @@ func (s *Store) NearbyWithOverlay(q Query, overlay map[int64][]mimit.Price) ([]R
 	if len(results) > q.Limit {
 		results = results[:q.Limit]
 	}
-	return results, nil
+	return results
+}
+
+func enrichStation(live, base mimit.Station) mimit.Station {
+	if live.Name == "" {
+		live.Name = base.Name
+	}
+	if live.Brand == "" {
+		live.Brand = base.Brand
+	}
+	if live.Manager == "" {
+		live.Manager = base.Manager
+	}
+	if live.Type == "" {
+		live.Type = base.Type
+	}
+	if live.Address == "" {
+		live.Address = base.Address
+	}
+	if live.City == "" {
+		live.City = base.City
+	}
+	if live.Province == "" {
+		live.Province = base.Province
+	}
+	if live.Latitude == 0 && live.Longitude == 0 {
+		live.Latitude = base.Latitude
+		live.Longitude = base.Longitude
+	}
+	return live
 }
 
 func mergePrices(base, live []mimit.Price) []mimit.Price {
@@ -219,7 +294,6 @@ func matchingPrices(prices []mimit.Price, fuel, service string) []mimit.Price {
 		}
 		matches = append(matches, p)
 	}
-	// Keep the payload stable and easy to scan in the UI: Self first, Servito second.
 	sort.SliceStable(matches, func(i, j int) bool {
 		if matches[i].Self != matches[j].Self {
 			return matches[i].Self
