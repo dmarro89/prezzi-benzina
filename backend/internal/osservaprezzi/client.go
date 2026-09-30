@@ -28,6 +28,15 @@ type Query struct {
 	Service   string
 }
 
+type Station struct {
+	ID        int64
+	Name      string
+	Brand     string
+	Latitude  float64
+	Longitude float64
+	Prices    []mimit.Price
+}
+
 type zoneRequest struct {
 	Points     []point `json:"points"`
 	FuelType   string  `json:"fuelType,omitempty"`
@@ -48,6 +57,8 @@ type zoneResponse struct {
 type liveStation struct {
 	ID         json.RawMessage `json:"id"`
 	Name       string          `json:"name"`
+	Brand      string          `json:"brand"`
+	Location   point           `json:"location"`
 	InsertDate string          `json:"insertDate"`
 	Fuels      []liveFuel      `json:"fuels"`
 }
@@ -66,7 +77,7 @@ func NewClient() *Client {
 	}
 }
 
-func (c *Client) SearchZone(ctx context.Context, q Query) (map[int64][]mimit.Price, error) {
+func (c *Client) SearchZone(ctx context.Context, q Query) ([]Station, error) {
 	fuelType, err := fuelType(q.Fuel, q.Service)
 	if err != nil {
 		return nil, err
@@ -110,18 +121,19 @@ func (c *Client) SearchZone(ctx context.Context, q Query) (map[int64][]mimit.Pri
 		return nil, fmt.Errorf("Osservaprezzi search failed")
 	}
 
-	prices := make(map[int64][]mimit.Price)
-	for _, station := range decoded.Results {
-		stationID := parseStationID(station)
+	stations := make([]Station, 0, len(decoded.Results))
+	for _, live := range decoded.Results {
+		stationID := parseStationID(live)
 		if stationID == 0 {
 			continue
 		}
-		updatedAt, _ := parseLiveDateTime(station.InsertDate)
-		for _, fuel := range station.Fuels {
+		updatedAt, _ := parseLiveDateTime(live.InsertDate)
+		prices := make([]mimit.Price, 0, len(live.Fuels))
+		for _, fuel := range live.Fuels {
 			if fuel.Price <= 0 || canonicalFuel(fuel.Name) == "" {
 				continue
 			}
-			prices[stationID] = append(prices[stationID], mimit.Price{
+			prices = append(prices, mimit.Price{
 				StationID: stationID,
 				Fuel:      fuel.Name,
 				Value:     fuel.Price,
@@ -129,8 +141,16 @@ func (c *Client) SearchZone(ctx context.Context, q Query) (map[int64][]mimit.Pri
 				UpdatedAt: updatedAt,
 			})
 		}
+		stations = append(stations, Station{
+			ID:        stationID,
+			Name:      strings.TrimSpace(live.Name),
+			Brand:     strings.TrimSpace(live.Brand),
+			Latitude:  live.Location.Lat,
+			Longitude: live.Location.Lng,
+			Prices:    prices,
+		})
 	}
-	return prices, nil
+	return stations, nil
 }
 
 func fuelType(fuel, service string) (string, error) {
