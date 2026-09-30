@@ -107,20 +107,36 @@ func (h Handler) nearby(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query := store.Query{Latitude: lat, Longitude: lng, RadiusKm: radius, Fuel: r.URL.Query().Get("fuel"), Service: service, Sort: sortBy, Limit: queryIntDefault(r, "limit", 30), IncludeStale: includeStale}
-	var overlay map[int64][]mimit.Price
+	var liveStations []store.LiveStation
 	liveData := false
 	if h.Live != nil {
 		liveCtx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
-		overlay, err = h.Live.SearchZone(liveCtx, osservaprezzi.Query{Latitude: lat, Longitude: lng, RadiusKm: radius, Fuel: query.Fuel, Service: service})
+		liveResults, liveErr := h.Live.SearchZone(liveCtx, osservaprezzi.Query{Latitude: lat, Longitude: lng, RadiusKm: radius, Fuel: query.Fuel, Service: service})
 		cancel()
-		if err == nil {
+		if liveErr == nil {
 			liveData = true
-		} else {
-			overlay = nil
+			liveStations = make([]store.LiveStation, 0, len(liveResults))
+			for _, item := range liveResults {
+				liveStations = append(liveStations, store.LiveStation{
+					Station: mimit.Station{
+						ID:        item.ID,
+						Name:      item.Name,
+						Brand:     item.Brand,
+						Latitude:  item.Latitude,
+						Longitude: item.Longitude,
+					},
+					Prices: item.Prices,
+				})
+			}
 		}
 	}
 
-	results, err := h.Store.NearbyWithOverlay(query, overlay)
+	var results []store.Result
+	if liveData {
+		results, err = h.Store.NearbyWithLive(query, liveStations)
+	} else {
+		results, err = h.Store.Nearby(query)
+	}
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, err.Error())
 		return
@@ -142,7 +158,7 @@ func (h Handler) nearby(w http.ResponseWriter, r *http.Request) {
 	}
 	dataSource := "MIMIT Open Data"
 	if liveData {
-		dataSource = "MIMIT Open Data + Osservaprezzi live"
+		dataSource = "Osservaprezzi live + MIMIT Open Data enrichment"
 	}
 	writeJSON(w, http.StatusOK, nearbyResponse{DataSource: dataSource, LiveData: liveData, FreshnessDays: store.DefaultFreshnessDays, IncludeStale: includeStale, Count: len(out), Stations: out})
 }
