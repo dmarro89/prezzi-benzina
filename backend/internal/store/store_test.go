@@ -76,7 +76,7 @@ func TestNearbyWithLiveUsesLiveLocationAndCSVMetadata(t *testing.T) {
 	s := New()
 	s.Replace(mimit.Dataset{
 		Stations: map[int64]mimit.Station{
-		38009: {ID: 38009, Name: "CSV name", Address: "Via Roma 1", City: "NOLA", Province: "NA", Latitude: 41.5, Longitude: 15.5},
+			38009: {ID: 38009, Name: "CSV name", Address: "Via Roma 1", City: "NOLA", Province: "NA", Latitude: 41.5, Longitude: 15.5},
 		},
 		Prices: map[int64][]mimit.Price{},
 	})
@@ -98,6 +98,68 @@ func TestNearbyWithLiveUsesLiveLocationAndCSVMetadata(t *testing.T) {
 	}
 	if got.Latitude != 40.9285 || got.Longitude != 14.5231 {
 		t.Fatalf("expected live coordinates, got %+v", got)
+	}
+}
+
+func TestNearbyWithLiveUsesNearbyCSVMetadataWhenIDDifferent(t *testing.T) {
+	s := New()
+	s.Replace(mimit.Dataset{
+		Stations: map[int64]mimit.Station{
+			999: {ID: 999, Name: "CSV station", Address: "Via Circumvallazione 10", City: "NOLA", Province: "NA", Latitude: 40.92851, Longitude: 14.52315},
+		},
+		Prices: map[int64][]mimit.Price{
+			999: {{StationID: 999, Fuel: "Benzina", Value: 2.100, Self: true, UpdatedAt: freshTime(1)}},
+		},
+	})
+	live := []LiveStation{{
+		Station: mimit.Station{ID: 38009, Name: "ESSO NOLA", Brand: "Esso", Latitude: 40.9285, Longitude: 14.5231},
+		Prices:  []mimit.Price{{StationID: 38009, Fuel: "Benzina", Value: 1.989, Self: true, UpdatedAt: freshTime(0)}},
+	}}
+
+	results, err := s.NearbyWithLive(Query{Latitude: 40.921459, Longitude: 14.5235855, RadiusKm: 2, Fuel: "benzina", Service: "self"}, live)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected one live result, got %+v", results)
+	}
+	got := results[0]
+	if got.Station.ID != 38009 {
+		t.Fatalf("live station ID must remain authoritative, got %d", got.Station.ID)
+	}
+	if got.Station.Address != "Via Circumvallazione 10" || got.Station.City != "NOLA" || got.Station.Province != "NA" {
+		t.Fatalf("expected nearby CSV metadata, got %+v", got.Station)
+	}
+	if got.Station.Latitude != 40.9285 || got.Station.Longitude != 14.5231 {
+		t.Fatalf("live coordinates must remain authoritative, got %+v", got.Station)
+	}
+	if got.Price.Value != 1.989 {
+		t.Fatalf("newer live price must remain authoritative, got %.3f", got.Price.Value)
+	}
+}
+
+func TestNearbyWithLiveDoesNotUseDistantCSVMetadata(t *testing.T) {
+	s := New()
+	s.Replace(mimit.Dataset{
+		Stations: map[int64]mimit.Station{
+			999: {ID: 999, Address: "Wrong address", City: "WRONG", Province: "XX", Latitude: 40.9300, Longitude: 14.5300},
+		},
+		Prices: map[int64][]mimit.Price{},
+	})
+	live := []LiveStation{{
+		Station: mimit.Station{ID: 38009, Name: "ESSO NOLA", Brand: "Esso", Latitude: 40.9285, Longitude: 14.5231},
+		Prices:  []mimit.Price{{StationID: 38009, Fuel: "Benzina", Value: 1.989, Self: true, UpdatedAt: freshTime(0)}},
+	}}
+
+	results, err := s.NearbyWithLive(Query{Latitude: 40.921459, Longitude: 14.5235855, RadiusKm: 2, Fuel: "benzina", Service: "self"}, live)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected one live result, got %+v", results)
+	}
+	if results[0].Station.Address != "" || results[0].Station.City != "" || results[0].Station.Province != "" {
+		t.Fatalf("distant CSV station must not enrich live result, got %+v", results[0].Station)
 	}
 }
 
