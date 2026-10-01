@@ -55,6 +55,7 @@ func (h Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.health)
 	mux.HandleFunc("GET /v1/stations/nearby", h.nearby)
+	mux.HandleFunc("GET /debug/stations/{id}", h.debugStation)
 	return cors(mux)
 }
 
@@ -66,6 +67,33 @@ func (h Handler) health(w http.ResponseWriter, _ *http.Request) {
 		status, code = "loading", http.StatusServiceUnavailable
 	}
 	writeJSON(w, code, map[string]any{"status": status, "stations": stations, "prices": prices, "datasetExtractedAt": timeOrNil(extracted), "loadedAt": timeOrNil(loaded), "freshnessDays": store.DefaultFreshnessDays})
+}
+
+func (h Handler) debugStation(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(strings.TrimSpace(r.PathValue("id")), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid station id")
+		return
+	}
+	station, ok := h.Store.GetStation(id)
+	if !ok {
+		writeJSON(w, http.StatusOK, map[string]any{"id": id, "found": false})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id": id,
+		"found": true,
+		"station": map[string]any{
+			"manager": station.Manager,
+			"brand": station.Brand,
+			"type": station.Type,
+			"name": station.Name,
+			"address": station.Address,
+			"city": station.City,
+			"province": station.Province,
+			"location": map[string]float64{"lat": station.Latitude, "lng": station.Longitude},
+		},
+	})
 }
 
 func (h Handler) nearby(w http.ResponseWriter, r *http.Request) {
