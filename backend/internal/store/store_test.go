@@ -7,6 +7,11 @@ import (
 	"github.com/dmarro89/prezzi-benzina/backend/internal/mimit"
 )
 
+const (
+	testLat = 45.0
+	testLng = 9.0
+)
+
 func freshTime(daysAgo int) time.Time {
 	now := time.Now().In(italyLocation)
 	midday := time.Date(now.Year(), now.Month(), now.Day(), 12, 0, 0, 0, italyLocation)
@@ -18,11 +23,11 @@ func TestNearbyWithOverlayUsesNewerLivePrice(t *testing.T) {
 	csvTime := freshTime(2)
 	liveTime := freshTime(1)
 	s.Replace(mimit.Dataset{
-		Stations: map[int64]mimit.Station{123: {ID: 123, Latitude: 40.85, Longitude: 14.27}},
+		Stations: map[int64]mimit.Station{123: {ID: 123, Latitude: testLat, Longitude: testLng}},
 		Prices:   map[int64][]mimit.Price{123: {{StationID: 123, Fuel: "Benzina", Value: 1.699, Self: true, UpdatedAt: csvTime}}},
 	})
 	overlay := map[int64][]mimit.Price{123: {{StationID: 123, Fuel: "Benzina", Value: 1.659, Self: true, UpdatedAt: liveTime}}}
-	results, err := s.NearbyWithOverlay(Query{Latitude: 40.85, Longitude: 14.27, RadiusKm: 5, Fuel: "benzina", Service: "self"}, overlay)
+	results, err := s.NearbyWithOverlay(Query{Latitude: testLat, Longitude: testLng, RadiusKm: 5, Fuel: "benzina", Service: "self"}, overlay)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,11 +41,11 @@ func TestNearbyWithOverlayKeepsNewerCSVPrice(t *testing.T) {
 	csvTime := freshTime(0)
 	liveTime := freshTime(1)
 	s.Replace(mimit.Dataset{
-		Stations: map[int64]mimit.Station{123: {ID: 123, Latitude: 40.85, Longitude: 14.27}},
+		Stations: map[int64]mimit.Station{123: {ID: 123, Latitude: testLat, Longitude: testLng}},
 		Prices:   map[int64][]mimit.Price{123: {{StationID: 123, Fuel: "Benzina", Value: 1.679, Self: true, UpdatedAt: csvTime}}},
 	})
 	overlay := map[int64][]mimit.Price{123: {{StationID: 123, Fuel: "Benzina", Value: 1.659, Self: true, UpdatedAt: liveTime}}}
-	results, err := s.NearbyWithOverlay(Query{Latitude: 40.85, Longitude: 14.27, RadiusKm: 5, Fuel: "benzina", Service: "self"}, overlay)
+	results, err := s.NearbyWithOverlay(Query{Latitude: testLat, Longitude: testLng, RadiusKm: 5, Fuel: "benzina", Service: "self"}, overlay)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,19 +57,19 @@ func TestNearbyWithOverlayKeepsNewerCSVPrice(t *testing.T) {
 func TestNearbyWithLiveKeepsStationAbsentFromCSV(t *testing.T) {
 	s := New()
 	s.Replace(mimit.Dataset{
-		Stations: map[int64]mimit.Station{1: {ID: 1, Latitude: 41, Longitude: 15}},
+		Stations: map[int64]mimit.Station{1: {ID: 1, Latitude: testLat, Longitude: testLng}},
 		Prices:   map[int64][]mimit.Price{},
 	})
 	live := []LiveStation{{
-		Station: mimit.Station{ID: 38009, Name: "ESSO NOLA", Brand: "Esso", Latitude: 40.9285, Longitude: 14.5231},
-		Prices:  []mimit.Price{{StationID: 38009, Fuel: "Benzina", Value: 1.989, Self: true, UpdatedAt: freshTime(0)}},
+		Station: mimit.Station{ID: 90001, Name: "Live Station", Brand: "Live Brand", Latitude: testLat + 0.001, Longitude: testLng + 0.001},
+		Prices:  []mimit.Price{{StationID: 90001, Fuel: "Benzina", Value: 1.989, Self: true, UpdatedAt: freshTime(0)}},
 	}}
 
-	results, err := s.NearbyWithLive(Query{Latitude: 40.921459, Longitude: 14.5235855, RadiusKm: 2, Fuel: "benzina", Service: "self"}, live)
+	results, err := s.NearbyWithLive(Query{Latitude: testLat, Longitude: testLng, RadiusKm: 2, Fuel: "benzina", Service: "self"}, live)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(results) != 1 || results[0].Station.ID != 38009 {
+	if len(results) != 1 || results[0].Station.ID != 90001 {
 		t.Fatalf("live-only station must remain visible, got %+v", results)
 	}
 	if results[0].Price.Value != 1.989 {
@@ -72,20 +77,20 @@ func TestNearbyWithLiveKeepsStationAbsentFromCSV(t *testing.T) {
 	}
 }
 
-func TestNearbyWithLiveUsesLiveLocationAndCSVMetadata(t *testing.T) {
+func TestNearbyWithLiveUsesLiveLocationAndCSVMetadataForSameID(t *testing.T) {
 	s := New()
 	s.Replace(mimit.Dataset{
 		Stations: map[int64]mimit.Station{
-			38009: {ID: 38009, Name: "CSV name", Address: "Via Roma 1", City: "NOLA", Province: "NA", Latitude: 41.5, Longitude: 15.5},
+			90002: {ID: 90002, Name: "CSV Name", Address: "Via Test 1", City: "TESTVILLE", Province: "TT", Latitude: 46, Longitude: 10},
 		},
 		Prices: map[int64][]mimit.Price{},
 	})
 	live := []LiveStation{{
-		Station: mimit.Station{ID: 38009, Name: "ESSO NOLA", Brand: "Esso", Latitude: 40.9285, Longitude: 14.5231},
-		Prices:  []mimit.Price{{StationID: 38009, Fuel: "Benzina", Value: 1.989, Self: true, UpdatedAt: freshTime(0)}},
+		Station: mimit.Station{ID: 90002, Name: "Live Name", Brand: "Live Brand", Latitude: testLat + 0.001, Longitude: testLng + 0.001},
+		Prices:  []mimit.Price{{StationID: 90002, Fuel: "Benzina", Value: 1.989, Self: true, UpdatedAt: freshTime(0)}},
 	}}
 
-	results, err := s.NearbyWithLive(Query{Latitude: 40.921459, Longitude: 14.5235855, RadiusKm: 2, Fuel: "benzina", Service: "self"}, live)
+	results, err := s.NearbyWithLive(Query{Latitude: testLat, Longitude: testLng, RadiusKm: 2, Fuel: "benzina", Service: "self"}, live)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,30 +98,30 @@ func TestNearbyWithLiveUsesLiveLocationAndCSVMetadata(t *testing.T) {
 		t.Fatalf("expected live location to keep station in radius, got %+v", results)
 	}
 	got := results[0].Station
-	if got.Address != "Via Roma 1" || got.City != "NOLA" || got.Province != "NA" {
-		t.Fatalf("expected CSV metadata enrichment, got %+v", got)
+	if got.Address != "Via Test 1" || got.City != "TESTVILLE" || got.Province != "TT" {
+		t.Fatalf("expected same-ID CSV metadata enrichment, got %+v", got)
 	}
-	if got.Latitude != 40.9285 || got.Longitude != 14.5231 {
+	if got.Latitude != testLat+0.001 || got.Longitude != testLng+0.001 {
 		t.Fatalf("expected live coordinates, got %+v", got)
 	}
 }
 
-func TestNearbyWithLiveUsesNearbyCSVMetadataWhenIDDifferent(t *testing.T) {
+func TestNearbyWithLiveDoesNotEnrichFromDifferentID(t *testing.T) {
 	s := New()
 	s.Replace(mimit.Dataset{
 		Stations: map[int64]mimit.Station{
-			999: {ID: 999, Name: "CSV station", Address: "Via Circumvallazione 10", City: "NOLA", Province: "NA", Latitude: 40.92851, Longitude: 14.52315},
+			90003: {ID: 90003, Address: "Wrong Address", City: "WRONG", Province: "XX", Latitude: testLat + 0.00101, Longitude: testLng + 0.00101},
 		},
 		Prices: map[int64][]mimit.Price{
-			999: {{StationID: 999, Fuel: "Benzina", Value: 2.100, Self: true, UpdatedAt: freshTime(1)}},
+			90003: {{StationID: 90003, Fuel: "Benzina", Value: 1.100, Self: true, UpdatedAt: freshTime(0)}},
 		},
 	})
 	live := []LiveStation{{
-		Station: mimit.Station{ID: 38009, Name: "ESSO NOLA", Brand: "Esso", Latitude: 40.9285, Longitude: 14.5231},
-		Prices:  []mimit.Price{{StationID: 38009, Fuel: "Benzina", Value: 1.989, Self: true, UpdatedAt: freshTime(0)}},
+		Station: mimit.Station{ID: 90004, Name: "Live Station", Brand: "Live Brand", Latitude: testLat + 0.001, Longitude: testLng + 0.001},
+		Prices:  []mimit.Price{{StationID: 90004, Fuel: "Benzina", Value: 1.989, Self: true, UpdatedAt: freshTime(0)}},
 	}}
 
-	results, err := s.NearbyWithLive(Query{Latitude: 40.921459, Longitude: 14.5235855, RadiusKm: 2, Fuel: "benzina", Service: "self"}, live)
+	results, err := s.NearbyWithLive(Query{Latitude: testLat, Longitude: testLng, RadiusKm: 2, Fuel: "benzina", Service: "self"}, live)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,58 +129,27 @@ func TestNearbyWithLiveUsesNearbyCSVMetadataWhenIDDifferent(t *testing.T) {
 		t.Fatalf("expected one live result, got %+v", results)
 	}
 	got := results[0]
-	if got.Station.ID != 38009 {
-		t.Fatalf("live station ID must remain authoritative, got %d", got.Station.ID)
-	}
-	if got.Station.Address != "Via Circumvallazione 10" || got.Station.City != "NOLA" || got.Station.Province != "NA" {
-		t.Fatalf("expected nearby CSV metadata, got %+v", got.Station)
-	}
-	if got.Station.Latitude != 40.9285 || got.Station.Longitude != 14.5231 {
-		t.Fatalf("live coordinates must remain authoritative, got %+v", got.Station)
+	if got.Station.Address != "" || got.Station.City != "" || got.Station.Province != "" {
+		t.Fatalf("different-ID CSV station must not enrich live result, got %+v", got.Station)
 	}
 	if got.Price.Value != 1.989 {
-		t.Fatalf("newer live price must remain authoritative, got %.3f", got.Price.Value)
-	}
-}
-
-func TestNearbyWithLiveDoesNotUseDistantCSVMetadata(t *testing.T) {
-	s := New()
-	s.Replace(mimit.Dataset{
-		Stations: map[int64]mimit.Station{
-			999: {ID: 999, Address: "Wrong address", City: "WRONG", Province: "XX", Latitude: 40.9300, Longitude: 14.5300},
-		},
-		Prices: map[int64][]mimit.Price{},
-	})
-	live := []LiveStation{{
-		Station: mimit.Station{ID: 38009, Name: "ESSO NOLA", Brand: "Esso", Latitude: 40.9285, Longitude: 14.5231},
-		Prices:  []mimit.Price{{StationID: 38009, Fuel: "Benzina", Value: 1.989, Self: true, UpdatedAt: freshTime(0)}},
-	}}
-
-	results, err := s.NearbyWithLive(Query{Latitude: 40.921459, Longitude: 14.5235855, RadiusKm: 2, Fuel: "benzina", Service: "self"}, live)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(results) != 1 {
-		t.Fatalf("expected one live result, got %+v", results)
-	}
-	if results[0].Station.Address != "" || results[0].Station.City != "" || results[0].Station.Province != "" {
-		t.Fatalf("distant CSV station must not enrich live result, got %+v", results[0].Station)
+		t.Fatalf("different-ID CSV price must not affect live result, got %.3f", got.Price.Value)
 	}
 }
 
 func TestNearbyWithLiveTreatsTodayPriceAsFresh(t *testing.T) {
 	s := New()
 	s.Replace(mimit.Dataset{
-		Stations:  map[int64]mimit.Station{31268: {ID: 31268, Latitude: 40.912, Longitude: 14.5105}},
+		Stations:  map[int64]mimit.Station{90005: {ID: 90005, Latitude: testLat + 0.001, Longitude: testLng + 0.001}},
 		Prices:    map[int64][]mimit.Price{},
 		Extracted: freshTime(1),
 	})
 	live := []LiveStation{{
-		Station: mimit.Station{ID: 31268, Name: "Saviano", Latitude: 40.912, Longitude: 14.5105},
-		Prices:  []mimit.Price{{StationID: 31268, Fuel: "Benzina", Value: 2.020, Self: true, UpdatedAt: freshTime(0)}},
+		Station: mimit.Station{ID: 90005, Name: "Fresh Live Station", Latitude: testLat + 0.001, Longitude: testLng + 0.001},
+		Prices:  []mimit.Price{{StationID: 90005, Fuel: "Benzina", Value: 2.020, Self: true, UpdatedAt: freshTime(0)}},
 	}}
 
-	results, err := s.NearbyWithLive(Query{Latitude: 40.921459, Longitude: 14.5235855, RadiusKm: 2, Fuel: "benzina", Service: "self"}, live)
+	results, err := s.NearbyWithLive(Query{Latitude: testLat, Longitude: testLng, RadiusKm: 2, Fuel: "benzina", Service: "self"}, live)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,14 +184,14 @@ func TestNearbyAnyReturnsSelfAndServed(t *testing.T) {
 	s := New()
 	updated := freshTime(0)
 	s.Replace(mimit.Dataset{
-		Stations: map[int64]mimit.Station{1: {ID: 1, Name: "Test", Latitude: 40.85, Longitude: 14.27}},
+		Stations: map[int64]mimit.Station{1: {ID: 1, Name: "Test", Latitude: testLat, Longitude: testLng}},
 		Prices: map[int64][]mimit.Price{1: {
 			{StationID: 1, Fuel: "Benzina", Value: 1.699, Self: true, UpdatedAt: updated},
 			{StationID: 1, Fuel: "Benzina", Value: 1.899, Self: false, UpdatedAt: updated},
 		}},
 	})
 
-	results, err := s.Nearby(Query{Latitude: 40.85, Longitude: 14.27, RadiusKm: 5, Fuel: "benzina", Service: "any", Sort: "price"})
+	results, err := s.Nearby(Query{Latitude: testLat, Longitude: testLng, RadiusKm: 5, Fuel: "benzina", Service: "any", Sort: "price"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,11 +206,11 @@ func TestNearbyAnyReturnsSelfAndServed(t *testing.T) {
 func TestNearbyAnyKeepsServedOnlyStation(t *testing.T) {
 	s := New()
 	s.Replace(mimit.Dataset{
-		Stations: map[int64]mimit.Station{1: {ID: 1, Name: "Served only", Latitude: 40.85, Longitude: 14.27}},
+		Stations: map[int64]mimit.Station{1: {ID: 1, Name: "Served only", Latitude: testLat, Longitude: testLng}},
 		Prices:   map[int64][]mimit.Price{1: {{StationID: 1, Fuel: "Gasolio", Value: 1.829, Self: false, UpdatedAt: freshTime(0)}}},
 	})
 
-	results, err := s.Nearby(Query{Latitude: 40.85, Longitude: 14.27, RadiusKm: 5, Fuel: "gasolio", Service: "any"})
+	results, err := s.Nearby(Query{Latitude: testLat, Longitude: testLng, RadiusKm: 5, Fuel: "gasolio", Service: "any"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,11 +222,11 @@ func TestNearbyAnyKeepsServedOnlyStation(t *testing.T) {
 func TestNearbyExcludesPricesOlderThanEightDays(t *testing.T) {
 	s := New()
 	s.Replace(mimit.Dataset{
-		Stations: map[int64]mimit.Station{1: {ID: 1, Name: "Stale", Latitude: 40.85, Longitude: 14.27}},
+		Stations: map[int64]mimit.Station{1: {ID: 1, Name: "Stale", Latitude: testLat, Longitude: testLng}},
 		Prices:   map[int64][]mimit.Price{1: {{StationID: 1, Fuel: "Benzina", Value: 1.989, Self: true, UpdatedAt: freshTime(9)}}},
 	})
 
-	results, err := s.Nearby(Query{Latitude: 40.85, Longitude: 14.27, RadiusKm: 10, Fuel: "benzina", Service: "any"})
+	results, err := s.Nearby(Query{Latitude: testLat, Longitude: testLng, RadiusKm: 10, Fuel: "benzina", Service: "any"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,11 +238,11 @@ func TestNearbyExcludesPricesOlderThanEightDays(t *testing.T) {
 func TestNearbyKeepsPriceOnEighthDay(t *testing.T) {
 	s := New()
 	s.Replace(mimit.Dataset{
-		Stations: map[int64]mimit.Station{1: {ID: 1, Name: "Fresh enough", Latitude: 40.85, Longitude: 14.27}},
+		Stations: map[int64]mimit.Station{1: {ID: 1, Name: "Fresh enough", Latitude: testLat, Longitude: testLng}},
 		Prices:   map[int64][]mimit.Price{1: {{StationID: 1, Fuel: "Benzina", Value: 2.019, Self: true, UpdatedAt: freshTime(8)}}},
 	})
 
-	results, err := s.Nearby(Query{Latitude: 40.85, Longitude: 14.27, RadiusKm: 10, Fuel: "benzina", Service: "any"})
+	results, err := s.Nearby(Query{Latitude: testLat, Longitude: testLng, RadiusKm: 10, Fuel: "benzina", Service: "any"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,14 +254,14 @@ func TestNearbyKeepsPriceOnEighthDay(t *testing.T) {
 func TestNearbyDropsOnlyStaleServicePrice(t *testing.T) {
 	s := New()
 	s.Replace(mimit.Dataset{
-		Stations: map[int64]mimit.Station{1: {ID: 1, Name: "Mixed freshness", Latitude: 40.85, Longitude: 14.27}},
+		Stations: map[int64]mimit.Station{1: {ID: 1, Name: "Mixed freshness", Latitude: testLat, Longitude: testLng}},
 		Prices: map[int64][]mimit.Price{1: {
 			{StationID: 1, Fuel: "Benzina", Value: 1.989, Self: true, UpdatedAt: freshTime(9)},
 			{StationID: 1, Fuel: "Benzina", Value: 2.149, Self: false, UpdatedAt: freshTime(1)},
 		}},
 	})
 
-	results, err := s.Nearby(Query{Latitude: 40.85, Longitude: 14.27, RadiusKm: 10, Fuel: "benzina", Service: "any"})
+	results, err := s.Nearby(Query{Latitude: testLat, Longitude: testLng, RadiusKm: 10, Fuel: "benzina", Service: "any"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,11 +273,11 @@ func TestNearbyDropsOnlyStaleServicePrice(t *testing.T) {
 func TestNearbyCanIncludeStalePricesForDiagnostics(t *testing.T) {
 	s := New()
 	s.Replace(mimit.Dataset{
-		Stations: map[int64]mimit.Station{1: {ID: 1, Name: "Stale diagnostic", Latitude: 40.85, Longitude: 14.27}},
+		Stations: map[int64]mimit.Station{1: {ID: 1, Name: "Stale diagnostic", Latitude: testLat, Longitude: testLng}},
 		Prices:   map[int64][]mimit.Price{1: {{StationID: 1, Fuel: "Benzina", Value: 1.989, Self: true, UpdatedAt: freshTime(9)}}},
 	})
 
-	results, err := s.Nearby(Query{Latitude: 40.85, Longitude: 14.27, RadiusKm: 10, Fuel: "benzina", Service: "any", IncludeStale: true})
+	results, err := s.Nearby(Query{Latitude: testLat, Longitude: testLng, RadiusKm: 10, Fuel: "benzina", Service: "any", IncludeStale: true})
 	if err != nil {
 		t.Fatal(err)
 	}
