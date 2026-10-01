@@ -11,10 +11,7 @@ import (
 	"github.com/dmarro89/prezzi-benzina/backend/internal/mimit"
 )
 
-const (
-	DefaultFreshnessDays   = 8
-	metadataMatchRadiusKm = 0.1
-)
+const DefaultFreshnessDays = 8
 
 var italyLocation = func() *time.Location {
 	loc, err := time.LoadLocation("Europe/Rome")
@@ -70,6 +67,13 @@ func (s *Store) Stats() (stations int, prices int, extracted time.Time, loaded t
 	return stations, prices, s.data.Extracted, s.data.LoadedAt
 }
 
+func (s *Store) GetStation(id int64) (mimit.Station, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	station, ok := s.data.Stations[id]
+	return station, ok
+}
+
 func (s *Store) Nearby(q Query) ([]Result, error) {
 	return s.NearbyWithOverlay(q, nil)
 }
@@ -96,8 +100,8 @@ func (s *Store) NearbyWithOverlay(q Query, overlay map[int64][]mimit.Price) ([]R
 }
 
 // NearbyWithLive uses the stations returned by Osservaprezzi as the authoritative
-// candidate set. The CSV registry enriches metadata and contributes prices, but it
-// cannot remove a station that the live search returned.
+// candidate set. The CSV registry enriches metadata only when the same station ID
+// exists in the registry; geographic guessing is intentionally avoided.
 func (s *Store) NearbyWithLive(q Query, live []LiveStation) ([]Result, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -110,14 +114,10 @@ func (s *Store) NearbyWithLive(q Query, live []LiveStation) ([]Result, error) {
 	results := make([]Result, 0, len(live))
 	for _, item := range live {
 		station := item.Station
-		baseID := station.ID
 		if base, ok := s.data.Stations[station.ID]; ok {
 			station = enrichStation(station, base)
-		} else if matchedID, base, ok := nearestStationForMetadata(station, s.data.Stations); ok {
-			station = enrichStation(station, base)
-			baseID = matchedID
 		}
-		merged := mergePrices(s.data.Prices[baseID], item.Prices)
+		merged := mergePrices(s.data.Prices[station.ID], item.Prices)
 		if result, ok := resultForStation(q, fuel, station, merged, reference); ok {
 			results = append(results, result)
 		}
@@ -218,33 +218,6 @@ func enrichStation(live, base mimit.Station) mimit.Station {
 		live.Longitude = base.Longitude
 	}
 	return live
-}
-
-// nearestStationForMetadata is a conservative fallback for cases where the live
-// station identifier is not present in the current CSV registry. It only supplies
-// metadata from a very close CSV station; the live ID, location and prices remain
-// authoritative.
-func nearestStationForMetadata(live mimit.Station, stations map[int64]mimit.Station) (int64, mimit.Station, bool) {
-	if live.Latitude == 0 && live.Longitude == 0 {
-		return 0, mimit.Station{}, false
-	}
-	bestDistance := metadataMatchRadiusKm
-	var bestID int64
-	var best mimit.Station
-	found := false
-	for id, candidate := range stations {
-		if candidate.Latitude == 0 && candidate.Longitude == 0 {
-			continue
-		}
-		distance := geo.DistanceKm(live.Latitude, live.Longitude, candidate.Latitude, candidate.Longitude)
-		if distance <= bestDistance {
-			bestDistance = distance
-			bestID = id
-			best = candidate
-			found = true
-		}
-	}
-	return bestID, best, found
 }
 
 func mergePrices(base, live []mimit.Price) []mimit.Price {
