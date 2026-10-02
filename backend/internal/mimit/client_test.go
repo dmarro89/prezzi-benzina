@@ -91,3 +91,19 @@ func TestDownloadBypassesHTTPDataCaches(t *testing.T) {
 		t.Fatalf("unexpected Pragma: %q", gotPragma)
 	}
 }
+
+
+func TestParseStationsMalformedQuotedRowDoesNotConsumeFollowingStation(t *testing.T) {
+	input := "Estrazione del 2026-10-02\n" +
+		"idImpianto|Gestore|Bandiera|Tipo Impianto|Nome Impianto|Indirizzo|Comune|Provincia|Latitudine|Longitudine\n" +
+		"90001|Broken Manager|Brand Test|Stradale|\"unterminated|Bad Address|Bad City|TT|45.000|9.000\n" +
+		"90002|Valid Manager|Brand Test|Stradale|Valid Station|Via Test 2|Testville|TT|45.002|9.002\n"
+
+	stations, _, err := ParseStations(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := stations[90002]; !ok {
+		t.Fatalf("valid station after malformed quoted row must still be parsed: %+v", stations)
+	}
+}
