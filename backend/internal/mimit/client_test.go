@@ -26,6 +26,25 @@ func TestParseStations2026Format(t *testing.T) {
 	}
 }
 
+func TestParseStationsDoesNotLetMalformedQuoteConsumeFollowingRows(t *testing.T) {
+	input := "Estrazione del 2026-10-02\n" +
+		"idImpianto|Gestore|Bandiera|Tipo Impianto|Nome Impianto|Indirizzo|Comune|Provincia|Latitudine|Longitudine\n" +
+		"90000|Gestore Rotto|Brand Test|Stradale|\"nome non chiuso|Via Rotta 1|Testville|TT|45.000|9.000\n" +
+		"90001|Gestore Valido|Brand Test|Stradale|Impianto Valido|Via Valida 1|Testville|TT|45.001|9.001\n"
+
+	stations, _, err := ParseStations(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	station, ok := stations[90001]
+	if !ok {
+		t.Fatalf("valid row after malformed quote was lost: %+v", stations)
+	}
+	if station.Address != "Via Valida 1" || station.City != "Testville" {
+		t.Fatalf("unexpected valid station: %+v", station)
+	}
+}
+
 func TestParsePrices2026Format(t *testing.T) {
 	input := "Estrazione del 2026-09-28\n" +
 		"idImpianto|descCarburante|prezzo|isSelf|dtComu\n" +
