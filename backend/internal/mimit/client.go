@@ -1,6 +1,7 @@
 package mimit
 
 import (
+	"bufio"
 	"context"
 	"encoding/csv"
 	"fmt"
@@ -167,35 +168,48 @@ func ParsePrices(r io.Reader) (map[int64][]Price, time.Time, error) {
 }
 
 func readDataset(r io.Reader) ([][]string, time.Time, error) {
-	reader := csv.NewReader(r)
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+
+	var extracted time.Time
+	var rows [][]string
+	firstRecord := true
+
+	for scanner.Scan() {
+		line := strings.TrimSuffix(scanner.Text(), "\r")
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+
+		row, err := readDatasetLine(line)
+		if err != nil {
+			return nil, extracted, err
+		}
+
+		if firstRecord {
+			firstRecord = false
+			if len(row) == 1 && strings.HasPrefix(strings.ToLower(strings.TrimSpace(row[0])), "estrazione") {
+				extracted = parseExtractionDate(row[0])
+				continue
+			}
+		}
+
+		rows = append(rows, row)
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, extracted, err
+	}
+	return rows, extracted, nil
+}
+
+func readDatasetLine(line string) ([]string, error) {
+	reader := csv.NewReader(strings.NewReader(line))
 	reader.Comma = '|'
 	reader.LazyQuotes = true
 	reader.TrimLeadingSpace = true
 	reader.FieldsPerRecord = -1
-	first, err := reader.Read()
-	if err != nil {
-		return nil, time.Time{}, err
-	}
-	var extracted time.Time
-	var rows [][]string
-	if len(first) == 1 && strings.HasPrefix(strings.ToLower(strings.TrimSpace(first[0])), "estrazione") {
-		extracted = parseExtractionDate(first[0])
-	} else {
-		rows = append(rows, first)
-	}
-	for {
-		row, err := reader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, extracted, err
-		}
-		if len(row) > 0 {
-			rows = append(rows, row)
-		}
-	}
-	return rows, extracted, nil
+	return reader.Read()
 }
 
 func normalizeHeader(s string) string {
