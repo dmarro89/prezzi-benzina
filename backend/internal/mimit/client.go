@@ -92,7 +92,7 @@ func (c *Client) download(ctx context.Context, rawURL string) (io.ReadCloser, er
 }
 
 func ParseStations(r io.Reader) (map[int64]Station, time.Time, error) {
-	records, extracted, err := readDataset(r)
+	records, extracted, err := readStationDataset(r)
 	if err != nil {
 		return nil, time.Time{}, err
 	}
@@ -165,6 +165,43 @@ func ParsePrices(r io.Reader) (map[int64][]Price, time.Time, error) {
 		return nil, extracted, fmt.Errorf("dataset contains no valid prices")
 	}
 	return prices, extracted, nil
+}
+
+func readStationDataset(r io.Reader) ([][]string, time.Time, error) {
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+
+	var extracted time.Time
+	rows := make([][]string, 0, 24000)
+	firstRecord := true
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		if firstRecord && strings.HasPrefix(strings.ToLower(line), "estrazione") {
+			extracted = parseExtractionDate(line)
+			firstRecord = false
+			continue
+		}
+		firstRecord = false
+
+		reader := csv.NewReader(strings.NewReader(line))
+		reader.Comma = '|'
+		reader.LazyQuotes = true
+		reader.TrimLeadingSpace = true
+		reader.FieldsPerRecord = -1
+		row, err := reader.Read()
+		if err != nil || len(row) == 0 {
+			continue
+		}
+		rows = append(rows, row)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, extracted, err
+	}
+	return rows, extracted, nil
 }
 
 func readDataset(r io.Reader) ([][]string, time.Time, error) {
