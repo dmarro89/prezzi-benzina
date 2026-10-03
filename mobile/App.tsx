@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Constants from 'expo-constants';
 import * as Location from 'expo-location';
 import {
   ActivityIndicator,
@@ -34,7 +35,32 @@ type Station = {
 
 type NearbyResponse = { dataSource: string; liveData?: boolean; count: number; stations: Station[] };
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
+function resolveApiUrl() {
+  const configured = process.env.EXPO_PUBLIC_API_URL?.trim();
+  if (configured) return configured.replace(/\/+$/, '');
+
+  const hostUri = Constants.expoConfig?.hostUri;
+  if (__DEV__ && hostUri) {
+    try {
+      const parsed = new URL(hostUri.includes('://') ? hostUri : `http://${hostUri}`);
+      const host = parsed.hostname;
+      const isLocalHost =
+        host === 'localhost' ||
+        host.endsWith('.local') ||
+        /^10\./.test(host) ||
+        /^192\.168\./.test(host) ||
+        /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+        /^169\.254\./.test(host);
+      if (isLocalHost) return `http://${host}:8080`;
+    } catch {
+      // Fall through to localhost for simulators or explicit env configuration.
+    }
+  }
+
+  return 'http://localhost:8080';
+}
+
+const API_URL = resolveApiUrl();
 const fuels: { key: Fuel; label: string }[] = [
   { key: 'benzina', label: 'Benzina' },
   { key: 'gasolio', label: 'Diesel' },
@@ -55,13 +81,19 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
 
   const findLocation = useCallback(async () => {
-    const permission = await Location.requestForegroundPermissionsAsync();
-    if (permission.status !== 'granted') throw new Error('Permesso posizione non concesso');
-    const last = await Location.getLastKnownPositionAsync({ maxAge: 60_000, requiredAccuracy: 1000 });
-    const current = last ?? (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }));
-    const next = { lat: current.coords.latitude, lng: current.coords.longitude };
-    setCoords(next);
-    return next;
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (permission.status !== 'granted') throw new Error('Permesso posizione non concesso');
+
+      const last = await Location.getLastKnownPositionAsync({ maxAge: 10 * 60_000, requiredAccuracy: 3000 });
+      const current = last ?? (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }));
+      const next = { lat: current.coords.latitude, lng: current.coords.longitude };
+      setCoords(next);
+      return next;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'errore sconosciuto';
+      throw new Error(`Localizzazione: ${message}`);
+    }
   }, []);
 
   const load = useCallback(async (isRefresh = false) => {
@@ -78,7 +110,20 @@ export default function App() {
         sort,
         limit: '40',
       });
-      const response = await fetch(`${API_URL}/v1/stations/nearby?${params}`);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10_000);
+      let response: Response;
+      try {
+        response = await fetch(`${API_URL}/v1/stations/nearby?${params}`, { signal: controller.signal });
+      } catch (e) {
+        const message = e instanceof Error ? e.message : 'errore sconosciuto';
+        if (controller.signal.aborted) {
+          throw new Error(`API timeout dopo 10s (${API_URL})`);
+        }
+        throw new Error(`API non raggiungibile (${API_URL}): ${message}`);
+      } finally {
+        clearTimeout(timeout);
+      }
       if (!response.ok) {
         const body = await response.text();
         throw new Error(`API ${response.status}: ${body}`);
