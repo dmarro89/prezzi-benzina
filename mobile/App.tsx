@@ -19,7 +19,7 @@ import {
 type Fuel = 'benzina' | 'gasolio' | 'gpl' | 'metano';
 type Sort = 'price' | 'distance';
 type Service = 'self' | 'served';
-type Radius = 2 | 5 | 10 | 20;
+type Radius = 2 | 5 | 10;
 
 type Price = { fuel: string; value: number; unit: string; service: string; updatedAt?: string };
 type Station = {
@@ -69,7 +69,7 @@ const fuels: { key: Fuel; label: string }[] = [
   { key: 'gpl', label: 'GPL' },
   { key: 'metano', label: 'Metano' },
 ];
-const radii: Radius[] = [2, 5, 10, 20];
+const radii: Radius[] = [2, 5, 10];
 
 export default function App() {
   const [fuel, setFuel] = useState<Fuel>('benzina');
@@ -110,7 +110,7 @@ export default function App() {
         fuel,
         service,
         sort,
-        limit: '40',
+        limit: '100',
       });
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 10_000);
