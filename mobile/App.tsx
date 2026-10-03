@@ -3,8 +3,10 @@ import Constants from 'expo-constants';
 import * as Location from 'expo-location';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Linking,
+  Platform,
   Pressable,
   RefreshControl,
   SafeAreaView,
@@ -221,9 +223,22 @@ export default function App() {
 function StationCard({ station, best }: { station: Station; best: boolean }) {
   const navigate = () => {
     const { lat, lng } = station.location;
-    void Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      Alert.alert('Posizione non disponibile', 'Le coordinate di questo distributore non sono valide.');
+      return;
+    }
+
+    const destination = encodeURIComponent(`${lat},${lng}`);
+    const url = Platform.OS === 'ios'
+      ? `https://maps.apple.com/directions?destination=${destination}`
+      : `https://www.google.com/maps/dir/?api=1&destination=${destination}&travelmode=driving`;
+    void Linking.openURL(url);
   };
-  const brand = (station.brand || station.name || 'Distributore').trim();
+
+  const name = (station.name || station.brand || 'Distributore').trim();
+  const brand = station.brand?.trim() ?? '';
+  const showBrand = brand !== '' && brand.toLocaleLowerCase('it-IT') !== name.toLocaleLowerCase('it-IT');
+  const logoLabel = brand || name;
   const address = station.address || 'Indirizzo non disponibile';
   const locality = station.city
     ? `${station.city}${station.province ? ` (${station.province})` : ''}`
@@ -231,12 +246,13 @@ function StationCard({ station, best }: { station: Station; best: boolean }) {
 
   return (
     <Pressable onPress={navigate} style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}>
-      <View style={styles.logo}><Text style={styles.logoText}>{brand.slice(0, 2).toUpperCase()}</Text></View>
+      <View style={styles.logo}><Text style={styles.logoText}>{logoLabel.slice(0, 2).toUpperCase()}</Text></View>
       <View style={styles.cardBody}>
         <View style={styles.cardTitleRow}>
-          <Text numberOfLines={1} style={styles.brand}>{brand}</Text>
+          <Text numberOfLines={1} style={styles.stationName}>{name}</Text>
           {best ? <View style={styles.bestBadge}><Text style={styles.bestText}>MIGLIORE</Text></View> : null}
         </View>
+        {showBrand ? <Text numberOfLines={1} style={styles.brandLabel}>{brand}</Text> : null}
         <Text numberOfLines={1} style={styles.address}>{address}</Text>
         {locality ? <Text numberOfLines={1} style={styles.city}>{locality}</Text> : null}
         <Text style={styles.meta}>{station.distanceKm.toFixed(1).replace('.', ',')} km</Text>
@@ -317,7 +333,8 @@ const styles = StyleSheet.create({
   logoText: { color: '#101210', fontWeight: '900', fontSize: 15 },
   cardBody: { flex: 1, minWidth: 0 },
   cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  brand: { color: '#F2F3F2', fontSize: 16, fontWeight: '800', maxWidth: '72%' },
+  stationName: { color: '#F2F3F2', fontSize: 16, fontWeight: '800', maxWidth: '72%' },
+  brandLabel: { color: '#8A908C', fontSize: 10, fontWeight: '700', marginTop: 3, letterSpacing: .35 },
   bestBadge: { backgroundColor: '#1E3325', borderRadius: 5, paddingHorizontal: 5, paddingVertical: 3 },
   bestText: { color: '#8CF0B0', fontWeight: '900', fontSize: 8, letterSpacing: .7 },
   address: { color: '#9A9E9B', fontSize: 12, marginTop: 4 },
