@@ -63,3 +63,55 @@ The app shows the timestamp communicated by the station manager when available. 
 Source: MIMIT, dataset “Carburanti - Prezzi praticati e anagrafica degli impianti”, IODL 2.0.
 
 See [docs/architecture.md](docs/architecture.md) for design decisions and the path to PostgreSQL/PostGIS.
+
+
+## Deploy the backend on Render
+
+The repository includes a `render.yaml` Blueprint and a Dockerfile. The API binds to Render's `PORT` automatically and starts listening before the first MIMIT refresh completes.
+
+1. In Render, create a new Blueprint from this GitHub repository.
+2. Select the branch you want to deploy.
+3. Render will create the `prezzi-benzina-api` web service from `render.yaml`.
+4. Wait until `/healthz` returns HTTP 200.
+5. Copy the public `https://...onrender.com` service URL.
+
+The free service can cold-start after inactivity, so the first request can take longer than subsequent requests.
+
+## Run the mobile app against the public backend
+
+Create `mobile/.env.local` from the example:
+
+```bash
+cd mobile
+cp .env.example .env.local
+```
+
+Set:
+
+```text
+EXPO_PUBLIC_API_URL=https://YOUR-SERVICE.onrender.com
+```
+
+Then:
+
+```bash
+npm install
+npx expo start
+```
+
+Sign in to Expo Go on the iPhone with the same Expo account used by the CLI, then scan the QR code.
+
+## Optional: install an internal iOS build
+
+The repository includes `mobile/eas.json` with a `preview` internal-distribution profile.
+
+```bash
+cd mobile
+npm install
+npx eas-cli@latest login
+npx eas-cli@latest init
+npx eas-cli@latest device:create
+npx eas-cli@latest build --platform ios --profile preview
+```
+
+An Apple Developer account is required for signing an iOS device build. After the build completes, open the installation link on the registered iPhone.
