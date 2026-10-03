@@ -110,7 +110,6 @@ export default function App() {
         fuel,
         service,
         sort,
-        limit: '100',
       });
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 10_000);
