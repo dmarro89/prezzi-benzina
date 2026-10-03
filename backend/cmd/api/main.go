@@ -16,7 +16,10 @@ import (
 )
 
 func main() {
-	addr := env("ADDR", ":8080")
+	addr := os.Getenv("ADDR")
+	if addr == "" {
+		addr = ":" + env("PORT", "8080")
+	}
 	refreshEvery := durationEnv("REFRESH_INTERVAL", 6*time.Hour)
 	dataStore := store.New()
 	client := mimit.NewClient()
@@ -33,10 +36,18 @@ func main() {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
-	if err := refresh(ctx, client, dataStore); err != nil {
-		log.Printf("initial MIMIT load failed: %v", err)
-	}
+	server := &http.Server{Addr: addr, Handler: appapi.Handler{Store: dataStore, Live: liveClient}.Routes(), ReadHeaderTimeout: 5 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
 	go func() {
+		log.Printf("API listening on %s", addr)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("serve: %v", err)
+		}
+	}()
+
+	go func() {
+		if err := refresh(ctx, client, dataStore); err != nil {
+			log.Printf("initial MIMIT load failed: %v", err)
+		}
 		ticker := time.NewTicker(refreshEvery)
 		defer ticker.Stop()
 		for {
@@ -48,14 +59,6 @@ func main() {
 					log.Printf("MIMIT refresh failed: %v", err)
 				}
 			}
-		}
-	}()
-
-	server := &http.Server{Addr: addr, Handler: appapi.Handler{Store: dataStore, Live: liveClient}.Routes(), ReadHeaderTimeout: 5 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
-	go func() {
-		log.Printf("API listening on %s", addr)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("serve: %v", err)
 		}
 	}()
 	<-ctx.Done()
