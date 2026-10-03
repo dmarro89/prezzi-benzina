@@ -134,7 +134,7 @@ func (h Handler) nearby(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	query := store.Query{Latitude: lat, Longitude: lng, RadiusKm: radius, Fuel: r.URL.Query().Get("fuel"), Service: service, Sort: sortBy, Limit: queryIntDefault(r, "limit", 30), IncludeStale: includeStale}
+	query := store.Query{Latitude: lat, Longitude: lng, RadiusKm: radius, Fuel: r.URL.Query().Get("fuel"), Service: service, Sort: sortBy, IncludeStale: includeStale}
 	var liveStations []store.LiveStation
 	liveData := false
 	if h.Live != nil {
@@ -228,17 +228,6 @@ func queryFloatDefault(r *http.Request, name string, fallback float64) float64 {
 		return fallback
 	}
 	n, err := strconv.ParseFloat(v, 64)
-	if err != nil {
-		return fallback
-	}
-	return n
-}
-func queryIntDefault(r *http.Request, name string, fallback int) int {
-	v := r.URL.Query().Get(name)
-	if v == "" {
-		return fallback
-	}
-	n, err := strconv.Atoi(v)
 	if err != nil {
 		return fallback
 	}
