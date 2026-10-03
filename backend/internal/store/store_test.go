@@ -285,3 +285,25 @@ func TestNearbyCanIncludeStalePricesForDiagnostics(t *testing.T) {
 		t.Fatalf("expected diagnostic override to include stale price, got %d results", len(results))
 	}
 }
+
+
+func TestNearbyDoesNotTruncateResults(t *testing.T) {
+	s := New()
+	stations := make(map[int64]mimit.Station)
+	prices := make(map[int64][]mimit.Price)
+	updated := freshTime(0)
+
+	for i := int64(1); i <= 125; i++ {
+		stations[i] = mimit.Station{ID: i, Name: "Test station", Latitude: 45.0, Longitude: 9.0}
+		prices[i] = []mimit.Price{{StationID: i, Fuel: "Benzina", Value: 1.8 + float64(i)/10000, Self: true, UpdatedAt: updated}}
+	}
+	s.Replace(mimit.Dataset{Stations: stations, Prices: prices})
+
+	results, err := s.Nearby(Query{Latitude: 45.0, Longitude: 9.0, RadiusKm: 10, Fuel: "benzina", Service: "self"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 125 {
+		t.Fatalf("expected all 125 nearby stations, got %d", len(results))
+	}
+}
