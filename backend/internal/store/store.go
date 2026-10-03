@@ -33,7 +33,6 @@ type Query struct {
 	Fuel         string
 	Service      string
 	Sort         string
-	Limit        int
 	IncludeStale bool
 }
 
@@ -89,7 +88,7 @@ func (s *Store) NearbyWithOverlay(q Query, overlay map[int64][]mimit.Price) ([]R
 	}
 
 	reference := time.Now().UTC()
-	results := make([]Result, 0, q.Limit)
+	results := make([]Result, 0)
 	for id, station := range s.data.Stations {
 		merged := mergePrices(s.data.Prices[id], overlay[id])
 		if result, ok := resultForStation(q, fuel, station, merged, reference); ok {
@@ -139,12 +138,6 @@ func normalizeQuery(q *Query, loaded bool) (string, error) {
 	if q.RadiusKm > 50 {
 		q.RadiusKm = 50
 	}
-	if q.Limit <= 0 {
-		q.Limit = 30
-	}
-	if q.Limit > 100 {
-		q.Limit = 100
-	}
 	return fuel, nil
 }
 
@@ -185,9 +178,6 @@ func finishResults(results []Result, q Query) []Result {
 		}
 		return results[i].Price.Value < results[j].Price.Value
 	})
-	if len(results) > q.Limit {
-		results = results[:q.Limit]
-	}
 	return results
 }
 
