@@ -66,13 +66,6 @@ func (s *Store) Stats() (stations int, prices int, extracted time.Time, loaded t
 	return stations, prices, s.data.Extracted, s.data.LoadedAt
 }
 
-func (s *Store) GetStation(id int64) (mimit.Station, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	station, ok := s.data.Stations[id]
-	return station, ok
-}
-
 func (s *Store) Nearby(q Query) ([]Result, error) {
 	return s.NearbyWithOverlay(q, nil)
 }
