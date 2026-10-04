@@ -7,6 +7,7 @@ import {
   Alert,
   FlatList,
   Linking,
+  Modal,
   Platform,
   Pressable,
   RefreshControl,
@@ -94,6 +95,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showInfo, setShowInfo] = useState(false);
 
   const findLocation = useCallback(async () => {
     try {
@@ -183,13 +185,22 @@ export default function App() {
                   </Text>
                 </View>
               </View>
-              <Pressable
-                accessibilityLabel="Aggiorna"
-                onPress={() => void load(true)}
-                style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
-              >
-                <Ionicons name="refresh" size={20} color={palette.text} />
-              </Pressable>
+              <View style={styles.headerActions}>
+                <Pressable
+                  accessibilityLabel="Informazioni"
+                  onPress={() => setShowInfo(true)}
+                  style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
+                >
+                  <Ionicons name="information-outline" size={20} color={palette.text} />
+                </Pressable>
+                <Pressable
+                  accessibilityLabel="Aggiorna"
+                  onPress={() => void load(true)}
+                  style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
+                >
+                  <Ionicons name="refresh" size={20} color={palette.text} />
+                </Pressable>
+              </View>
             </View>
 
             <View style={styles.sourceRow}>
@@ -298,7 +309,55 @@ export default function App() {
           <Text style={styles.footer}>Fonte dati: Ministero delle Imprese e del Made in Italy</Text>
         }
       />
+      <InfoModal visible={showInfo} onClose={() => setShowInfo(false)} />
     </SafeAreaView>
+  );
+}
+
+function InfoModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  const version = Constants.expoConfig?.version ?? '0.1.0';
+
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <SafeAreaView style={styles.infoSafe}>
+        <View style={styles.infoHeader}>
+          <Text style={styles.infoTitle}>Informazioni</Text>
+          <Pressable accessibilityLabel="Chiudi" onPress={onClose} style={({ pressed }) => [styles.infoClose, pressed && styles.pressed]}>
+            <Ionicons name="close" size={22} color={palette.text} />
+          </Pressable>
+        </View>
+
+        <View style={styles.infoSection}>
+          <Text style={styles.infoSectionTitle}>Dati</Text>
+          <Text style={styles.infoBody}>
+            I distributori e i prezzi arrivano da Osservaprezzi carburanti e dagli Open Data del Ministero delle Imprese e del Made in Italy.
+          </Text>
+        </View>
+
+        <View style={styles.infoSection}>
+          <Text style={styles.infoSectionTitle}>Aggiornamento prezzi</Text>
+          <Text style={styles.infoBody}>
+            Mostriamo solo prezzi comunicati negli ultimi 8 giorni. Data e ora accanto al prezzo indicano l'ultimo aggiornamento disponibile per quel servizio.
+          </Text>
+        </View>
+
+        <View style={styles.infoSection}>
+          <Text style={styles.infoSectionTitle}>Posizione</Text>
+          <Text style={styles.infoBody}>
+            La posizione serve esclusivamente a trovare i distributori vicini. Non viene salvata dal servizio e l'app non usa sistemi di analytics o profilazione.
+          </Text>
+        </View>
+
+        <View style={styles.infoSection}>
+          <Text style={styles.infoSectionTitle}>Coordinate</Text>
+          <Text style={styles.infoBody}>
+            Distanze e navigazione dipendono dalle coordinate pubblicate dalle fonti ufficiali; eventuali imprecisioni possono riflettersi sulla posizione mostrata.
+          </Text>
+        </View>
+
+        <Text style={styles.infoVersion}>Prezzi Benzina · v{version}</Text>
+      </SafeAreaView>
+    </Modal>
   );
 }
 
@@ -394,6 +453,7 @@ const styles = StyleSheet.create({
 
   header: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginTop: 8 },
   headerCopy: { flex: 1, paddingRight: 16 },
+  headerActions: { flexDirection: 'row', gap: 8 },
   appTitle: {
     color: palette.text,
     fontSize: 30,
@@ -527,4 +587,13 @@ const styles = StyleSheet.create({
 
   empty: { color: palette.muted, paddingVertical: 42, textAlign: 'center', fontSize: 13 },
   footer: { color: palette.subtle, fontSize: 10, textAlign: 'center', marginTop: 24, lineHeight: 15 },
+
+  infoSafe: { flex: 1, backgroundColor: palette.background, paddingHorizontal: 22 },
+  infoHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 12, paddingBottom: 24 },
+  infoTitle: { color: palette.text, fontSize: 28, fontWeight: '700', letterSpacing: -0.6, fontFamily: displayFont },
+  infoClose: { width: 40, height: 40, borderRadius: 20, borderWidth: 1, borderColor: palette.line, backgroundColor: palette.surface, alignItems: 'center', justifyContent: 'center' },
+  infoSection: { paddingVertical: 18, borderBottomWidth: 1, borderBottomColor: palette.line },
+  infoSectionTitle: { color: palette.text, fontSize: 14, fontWeight: '700', marginBottom: 7 },
+  infoBody: { color: '#555A54', fontSize: 13, lineHeight: 20 },
+  infoVersion: { color: palette.subtle, fontSize: 11, marginTop: 24 },
 });
