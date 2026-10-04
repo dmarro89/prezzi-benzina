@@ -5,7 +5,7 @@ services:
     plan: free
     region: frankfurt
     rootDir: backend
-    healthCheckPath: /healthz
+    healthCheckPath: /readyz
     autoDeployTrigger: checksPass
     envVars:
       - key: REFRESH_INTERVAL
