@@ -128,13 +128,13 @@ export default function App() {
       });
 
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10_000);
+      const timeout = setTimeout(() => controller.abort(), 30_000);
       let response: Response;
       try {
         response = await fetch(`${API_URL}/v1/stations/nearby?${params}`, { signal: controller.signal });
       } catch (e) {
         const message = e instanceof Error ? e.message : 'errore sconosciuto';
-        if (controller.signal.aborted) throw new Error('Il caricamento ha superato i 10 secondi');
+        if (controller.signal.aborted) throw new Error('Il caricamento ha superato i 30 secondi');
         throw new Error(`Backend non raggiungibile: ${message}`);
       } finally {
         clearTimeout(timeout);
