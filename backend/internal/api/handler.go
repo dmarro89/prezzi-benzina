@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -15,13 +16,15 @@ import (
 )
 
 type Handler struct {
-	Store *store.Store
-	Live  *osservaprezzi.Client
+	Store     *store.Store
+	Live      *osservaprezzi.Client
+	LiveCache *liveSearchCache
 }
 
 type nearbyResponse struct {
 	DataSource    string            `json:"dataSource"`
 	LiveData      bool              `json:"liveData"`
+	LiveCache     bool              `json:"liveCache,omitempty"`
 	FreshnessDays int               `json:"freshnessDays"`
 	IncludeStale  bool              `json:"includeStale"`
 	Count         int               `json:"count"`
@@ -52,20 +55,44 @@ type price struct {
 }
 
 func (h Handler) Routes() http.Handler {
+	if h.LiveCache == nil {
+		h.LiveCache = newLiveSearchCache(10 * time.Minute)
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.health)
+	mux.HandleFunc("GET /readyz", h.ready)
 	mux.HandleFunc("GET /v1/stations/nearby", h.nearby)
-	return cors(mux)
+	return requestLog(cors(mux))
 }
 
 func (h Handler) health(w http.ResponseWriter, _ *http.Request) {
 	stations, prices, extracted, loaded := h.Store.Stats()
-	status := "ok"
-	code := http.StatusOK
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":             "ok",
+		"dataReady":          stations > 0,
+		"stations":           stations,
+		"prices":             prices,
+		"datasetExtractedAt": timeOrNil(extracted),
+		"loadedAt":           timeOrNil(loaded),
+		"freshnessDays":      store.DefaultFreshnessDays,
+	})
+}
+
+func (h Handler) ready(w http.ResponseWriter, _ *http.Request) {
+	stations, prices, extracted, loaded := h.Store.Stats()
+	status := http.StatusOK
+	state := "ready"
 	if stations == 0 {
-		status, code = "loading", http.StatusServiceUnavailable
+		status = http.StatusServiceUnavailable
+		state = "loading"
 	}
-	writeJSON(w, code, map[string]any{"status": status, "stations": stations, "prices": prices, "datasetExtractedAt": timeOrNil(extracted), "loadedAt": timeOrNil(loaded), "freshnessDays": store.DefaultFreshnessDays})
+	writeJSON(w, status, map[string]any{
+		"status":             state,
+		"stations":           stations,
+		"prices":             prices,
+		"datasetExtractedAt": timeOrNil(extracted),
+		"loadedAt":           timeOrNil(loaded),
+	})
 }
 
 func (h Handler) nearby(w http.ResponseWriter, r *http.Request) {
@@ -107,32 +134,32 @@ func (h Handler) nearby(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query := store.Query{Latitude: lat, Longitude: lng, RadiusKm: radius, Fuel: r.URL.Query().Get("fuel"), Service: service, Sort: sortBy, IncludeStale: includeStale}
+	liveQuery := osservaprezzi.Query{Latitude: lat, Longitude: lng, RadiusKm: radius, Fuel: query.Fuel, Service: service}
 	var liveStations []store.LiveStation
+	useLiveCandidates := false
 	liveData := false
+	liveCache := false
 	if h.Live != nil {
 		liveCtx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
-		liveResults, liveErr := h.Live.SearchZone(liveCtx, osservaprezzi.Query{Latitude: lat, Longitude: lng, RadiusKm: radius, Fuel: query.Fuel, Service: service})
+		liveResults, liveErr := h.Live.SearchZone(liveCtx, liveQuery)
 		cancel()
 		if liveErr == nil {
 			liveData = true
-			liveStations = make([]store.LiveStation, 0, len(liveResults))
-			for _, item := range liveResults {
-				liveStations = append(liveStations, store.LiveStation{
-					Station: mimit.Station{
-						ID:        item.ID,
-						Name:      item.Name,
-						Brand:     item.Brand,
-						Latitude:  item.Latitude,
-						Longitude: item.Longitude,
-					},
-					Prices: item.Prices,
-				})
+			useLiveCandidates = true
+			h.LiveCache.put(liveQuery, liveResults)
+			liveStations = toStoreLiveStations(liveResults)
+		} else {
+			log.Printf("Osservaprezzi request failed path=%s err=%q", r.URL.Path, liveErr)
+			if cached, ok := h.LiveCache.get(liveQuery); ok {
+				liveCache = true
+				useLiveCandidates = true
+				liveStations = toStoreLiveStations(cached)
 			}
 		}
 	}
 
 	var results []store.Result
-	if liveData {
+	if useLiveCandidates {
 		results, err = h.Store.NearbyWithLive(query, liveStations)
 	} else {
 		results, err = h.Store.Nearby(query)
@@ -159,8 +186,27 @@ func (h Handler) nearby(w http.ResponseWriter, r *http.Request) {
 	dataSource := "MIMIT Open Data"
 	if liveData {
 		dataSource = "Osservaprezzi live + MIMIT Open Data enrichment"
+	} else if liveCache {
+		dataSource = "Osservaprezzi recent cache + MIMIT Open Data enrichment"
 	}
-	writeJSON(w, http.StatusOK, nearbyResponse{DataSource: dataSource, LiveData: liveData, FreshnessDays: store.DefaultFreshnessDays, IncludeStale: includeStale, Count: len(out), Stations: out})
+	writeJSON(w, http.StatusOK, nearbyResponse{DataSource: dataSource, LiveData: liveData, LiveCache: liveCache, FreshnessDays: store.DefaultFreshnessDays, IncludeStale: includeStale, Count: len(out), Stations: out})
+}
+
+func toStoreLiveStations(items []osservaprezzi.Station) []store.LiveStation {
+	out := make([]store.LiveStation, 0, len(items))
+	for _, item := range items {
+		out = append(out, store.LiveStation{
+			Station: mimit.Station{
+				ID:        item.ID,
+				Name:      item.Name,
+				Brand:     item.Brand,
+				Latitude:  item.Latitude,
+				Longitude: item.Longitude,
+			},
+			Prices: item.Prices,
+		})
+	}
+	return out
 }
 
 func priceResponse(item mimit.Price) price {
@@ -178,6 +224,25 @@ func priceResponse(item mimit.Price) price {
 		updated = &t
 	}
 	return price{Fuel: item.Fuel, Value: item.Value, Unit: unit, Service: serviceName, UpdatedAt: updated}
+}
+
+type statusWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *statusWriter) WriteHeader(status int) {
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func requestLog(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(sw, r)
+		log.Printf("http method=%s path=%s status=%d duration=%s", r.Method, r.URL.Path, sw.status, time.Since(start).Round(time.Millisecond))
+	})
 }
 
 func cors(next http.Handler) http.Handler {
