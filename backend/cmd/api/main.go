@@ -45,9 +45,22 @@ func main() {
 	}()
 
 	go func() {
-		if err := refresh(ctx, client, dataStore); err != nil {
-			log.Printf("initial MIMIT load failed: %v", err)
+		for {
+			if err := refresh(ctx, client, dataStore); err == nil {
+				break
+			} else {
+				stations, prices, _, _ := dataStore.Stats()
+				log.Printf("initial MIMIT load failed: %v; available last-known-good stations=%d prices=%d; retrying in 1m", err, stations, prices)
+			}
+			timer := time.NewTimer(time.Minute)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
 		}
+
 		ticker := time.NewTicker(refreshEvery)
 		defer ticker.Stop()
 		for {
@@ -56,7 +69,8 @@ func main() {
 				return
 			case <-ticker.C:
 				if err := refresh(ctx, client, dataStore); err != nil {
-					log.Printf("MIMIT refresh failed: %v", err)
+					stations, prices, _, _ := dataStore.Stats()
+					log.Printf("MIMIT refresh failed: %v; keeping last-known-good stations=%d prices=%d", err, stations, prices)
 				}
 			}
 		}
