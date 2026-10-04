@@ -19,6 +19,12 @@
           "locationWhenInUsePermission": "Usiamo la tua posizione solo per mostrarti i distributori vicini."
         }
       ]
-    ]
+    ],
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F4F4F0"
+    }
   }
 }
