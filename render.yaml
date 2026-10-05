@@ -1,0 +1,12 @@
+services:
+  - type: web
+    runtime: docker
+    name: prezzi-benzina-api
+    plan: free
+    region: frankfurt
+    rootDir: backend
+    healthCheckPath: /readyz
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: REFRESH_INTERVAL
+        value: 6h
