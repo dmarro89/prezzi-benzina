@@ -364,12 +364,27 @@ function InfoModal({ visible, onClose }: { visible: boolean; onClose: () => void
 function StationRow({ station, best }: { station: Station; best: boolean }) {
   const navigate = () => {
     const { lat, lng } = station.location;
-    if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
-      Alert.alert('Posizione non disponibile', 'Le coordinate di questo distributore non sono valide.');
+    const hasValidCoordinates =
+      Number.isFinite(lat) && Number.isFinite(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+
+    const addressParts = [
+      station.address?.trim(),
+      station.city?.trim(),
+      station.province?.trim() ? `(${station.province.trim()})` : '',
+      'Italia',
+    ].filter(Boolean);
+    const addressDestination = addressParts.join(', ');
+    const rawDestination = addressDestination || (hasValidCoordinates ? `${lat},${lng}` : '');
+
+    if (!rawDestination) {
+      Alert.alert(
+        'Posizione non disponibile',
+        'Non sono disponibili né un indirizzo né coordinate valide per questo distributore.',
+      );
       return;
     }
 
-    const destination = encodeURIComponent(`${lat},${lng}`);
+    const destination = encodeURIComponent(rawDestination);
     const url =
       Platform.OS === 'ios'
         ? `https://maps.apple.com/directions?destination=${destination}`
