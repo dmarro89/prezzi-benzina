@@ -351,7 +351,7 @@ function InfoModal({ visible, onClose }: { visible: boolean; onClose: () => void
         <View style={styles.infoSection}>
           <Text style={styles.infoSectionTitle}>Coordinate</Text>
           <Text style={styles.infoBody}>
-            Distanze e navigazione dipendono dalle coordinate pubblicate dalle fonti ufficiali; eventuali imprecisioni possono riflettersi sulla posizione mostrata.
+            Le distanze sono calcolate usando le coordinate pubblicate dalle fonti ufficiali. Per la navigazione viene invece usato l'indirizzo dell'impianto, con le coordinate come fallback se l'indirizzo non è disponibile.
           </Text>
         </View>
 
